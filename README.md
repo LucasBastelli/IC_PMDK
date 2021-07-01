@@ -1,2 +1,1 @@
-# IC_PMDK
-Iniciação científica em memórias persistentes
+Programa resgata da memória ultima struct e salva uma nova.
