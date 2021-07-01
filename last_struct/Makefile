@@ -4,7 +4,7 @@
 #
 #
 
-PROGS = pm-dyn-str1 pm-dyn-str2
+PROGS = pm_dyn_str
 
 LIBS = -lpmemobj -lpmem -pthread
 
@@ -30,7 +30,7 @@ $(PROGS):
 	$(LINKER) -o $@ $^ $(LDFLAGS) $(LIBS)
 
 
-pm-dyn-str2: pm-dyn-str2.o
+pm_dyn_str: pm_dyn_str.o
 
 clean:
 	rm -f $(PROGS)
