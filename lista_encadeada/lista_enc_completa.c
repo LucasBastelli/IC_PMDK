@@ -33,24 +33,24 @@ static void print_todos(const TOID(struct entry) str)
 	printf("String: %s\n", aux->data);
 	if (!TOID_IS_NULL(D_RO(str)->next))
 	{
-		print_todos(D_RO(str)->next);
+		print_todos(D_RO(str)->next);	//Utiliza recursão para printar todos
 	}
 	return;
 }
 
 void print_atual(TOID(struct entry) noh_atual){
-	const struct entry *aux= D_RO(noh_atual);
+	const struct entry *aux= D_RO(noh_atual);	//Printa apenas 1
 	printf("Numero: %d\n", aux->valor);
 	printf("String: %s\n", aux->data);
 	return;
 }
 
 TOID(struct root) insere_final(PMEMobjpool *pop,const char *data,int valor,TOID(struct root) root){
-	if(!TOID_IS_NULL(D_RO(root)->head)){
+	if(!TOID_IS_NULL(D_RO(root)->head)){			//Testa se a lista não esta vazia
 		TOID(struct entry) aux=(D_RO(root)->head);
 		while(!TOID_IS_NULL(D_RO(aux)->next))
 		{
-			aux=D_RO(aux)->next;
+			aux=D_RO(aux)->next;			//Vai até o ultimo elemento
 		}
 		TX_BEGIN(pop) {
 			/* now we can safely allocate and initialize the new entry */
@@ -64,13 +64,13 @@ TOID(struct root) insere_final(PMEMobjpool *pop,const char *data,int valor,TOID(
 			D_RW(aux)->next = entry;
 		} TX_END
 	}
-	else{
+	else{			//Se a lista esta vazia, coloca na cabeça
 		TX_BEGIN(pop) {
 			/* now we can safely allocate and initialize the new entry */
 			TOID(struct entry) entry = TX_ALLOC(struct entry,sizeof(struct entry) + strlen(data)+1);
 			D_RW(entry)->valor = valor;
 			D_RW(entry)->next=D_RO(root)->head;
-			memcpy(D_RW(entry)->data, data, strlen(data)+1);
+			memcpy(D_RW(entry)->data, data, strlen(data)+1);	
 
 			// snapshot before changing
 			TX_ADD(root);
@@ -88,7 +88,7 @@ TOID(struct root) remove_cabeca(PMEMobjpool *pop,TOID(struct root) root){
 	aux=D_RO(root)->head;
 	TX_BEGIN(pop){
 		TX_ADD(root);
-		D_RW(root)->head = D_RO(aux)->next;
+		D_RW(root)->head = D_RO(aux)->next;	//Aponta para o próximo e remove a aantiga cabeça
 		TX_FREE(aux);
 
 	}TX_END
@@ -119,7 +119,7 @@ void remove_noh(PMEMobjpool *pop,TOID(struct entry) noh_anterior){
 	}
 	TX_BEGIN(pop){
 		TX_ADD(noh_anterior);
-		D_RW(noh_anterior)->next=D_RO(noh_atual)->next;
+		D_RW(noh_anterior)->next=D_RO(noh_atual)->next; //Nó anterior aponta para o próximo nó do atual, e remove o nó atual
 		TX_FREE(noh_atual);
 	
 	
