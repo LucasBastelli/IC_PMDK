@@ -3,20 +3,21 @@ import re
 import matplotlib.pyplot as plt
 import sys
 
-def rodar(arq,rep,size,qnt):
+def rodar(arq,rep,TamanhoInicial,TamanhoFinal,qnt,update):
+	Total=int((TamanhoFinal-TamanhoInicial)/qnt)
 	programa="./intset-ll"
-	argumento=["-i ","-r "]
+	argumento=["-i ","-r ","-u"]
 	aux=1
 	while(aux<=rep):			#Quantidade de repeticoes
 		rep0=rep
-		size0=size
+		size0=TamanhoInicial
 		qnt0=qnt
-		while(qnt0!=0):		#Variados tamanhos
-				teste=subprocess.run([programa, argumento[0]+str(size0),argumento[1]+str(size0)], stdout=subprocess.PIPE)
+		while(qnt0>=0):		#Variados tamanhos
+				teste=subprocess.run([programa, argumento[0]+str(size0),argumento[1]+str(size0),argumento[2]+str(update)], stdout=subprocess.PIPE)
 				linhas = teste.stdout.splitlines()
 				salvarRAW(arq,size0,aux,linhas)
 				qnt0-=1
-				size0=size0*2
+				size0=size0+Total
 		aux+=1
 		
 	return
@@ -48,7 +49,7 @@ def graf(arq,x,y,intCon):
 	plt.ylabel("Velocidade")
 	plt.savefig(arq+"/grafico.pdf")
 	plt.show()
-
+	
 def salvarRAW(diretorio,size,num,text):
 	arq=open(diretorio+"/teste"+str(size)+"_"+str(num),"w")	#Nome do arquivo
 	for line in text:
@@ -60,10 +61,13 @@ def abrirRAW(txt,diretorio,indice):
 	lista=[]
 	listaTam=[]
 	rep=indice[0]
-	tamanho=indice[1]
-	aumentar=indice[2]
+	TamanhoIni=indice[1]
+	TamanhoFinal=indice[2]
+	aumentar=indice[3]
 	contador=1
 	contador2=1
+	Total=int((TamanhoFinal-TamanhoIni)/aumentar)
+	tamanho=TamanhoIni
 	while(contador<aumentar):
 		contador2=1
 		listaAux=[]
@@ -75,7 +79,7 @@ def abrirRAW(txt,diretorio,indice):
 			contador2+=1
 		listaTam.append(tamanho)
 		lista.append(listaAux)		
-		tamanho=tamanho*2
+		tamanho=tamanho+Total
 		contador+=1
 	return listaTam,lista
 			
@@ -93,13 +97,13 @@ def mkdir(arq):				#Cria o diretorio
 			aux+=1
 		return arq0	'''
 
-def criaIndice(arq,rep,tamanho,aumentar):
+def criaIndice(arq,rep,TamanhoIni,TamanhoFinal,aumentar):
 	arquivo=open(arq+"/indice.txt","w")			#Salva os tamanhos e quantidade de testes
-	arquivo.write("["+str(rep)+","+str(tamanho)+","+str(aumentar)+']')
+	arquivo.write("["+str(rep)+","+str(TamanhoIni)+","+str(TamanhoFinal)+","+str(aumentar)+']')
 	return
 
 def abrirIndice(arq):
-	arquivo=open(arq+"/indice.txt","r")			#Resgata os tamanhos e quantidade de testes
+	arquivo=open(arq+"/indice.txt","r")		#Resgata os tamanhos e quantidade de testes
 	lista=arquivo.read()
 	lista=eval(lista)
 	return lista
@@ -162,15 +166,17 @@ def enumera(lista):					#Remove os textos,deixando apenas os numeros
 
 def main(arg):
 	rep=10					#Quantas vezes ira repetir
-	tamanho=128				#Tamanho inicial
+	tamanhoIni=128				#Tamanho inicial
+	tamanhoFinal=16384			#Tamanho final
 	aumentar=8				#Quantas vezes o tamanho ira aumentar
+	update=20				#Taxa de update
 	arq="/home/lucas/Desktop/teste"
 	txt='#txs          :'
 	arq=mkdir(arq)
 	x=[]
 	final=[]
 	intervalo=[]
-	if(len(arg)==1 or len(arg)>2):
+	if(len(arg)==1 or len(arg)>7):
 		print("Modo de uso: python3 bash.py <argumento>\nDigite <python3 bash.py h> para lista de comandos")
 		return
 	
@@ -179,9 +185,16 @@ def main(arg):
 		return
 		
 	elif(arg[1]=='a'):
-		criaIndice(arq,rep,tamanho,aumentar)
-		rodar(arq,rep,tamanho,aumentar)
-		x,y=abrirRAW(txt,arq,[rep,tamanho,aumentar])
+		if(len(arg)==7):
+			rep=int(arg[2])			#Quantas vezes ira repetir
+			tamanhoIni=int(arg[3])			#Tamanho inicial
+			tamanhoFinal=int(arg[4])		#Tamanho Final
+			aumentar=int(arg[5])			#Quantas vezes o tamanho ira aumentar
+			update=int(arg[6])			#Taxa de update
+			print(tamanhoIni,tamanhoFinal,aumentar,update)
+		criaIndice(arq,rep,tamanhoIni,tamanhoFinal,aumentar)
+		rodar(arq,rep,tamanhoIni,tamanhoFinal,aumentar,update)
+		x,y=abrirRAW(txt,arq,[rep,tamanhoIni,tamanhoFinal,aumentar])
 		medias=mediaLista(y)
 		for lista in y:
 			intervalo.append(IntConfianca(lista))
@@ -189,8 +202,14 @@ def main(arg):
 		return
 	
 	elif(arg[1]=='r'):
-		criaIndice(arq,rep,tamanho,aumentar)
-		rodar(arq,rep,tamanho,aumentar)
+		if(len(arg)==7):
+			rep=int(arg[2])			#Quantas vezes ira repetir
+			tamanhoIni=int(arg[3])			#Tamanho inicial
+			tamanhoFinal=int(arg[4])		#Tamanho Final
+			aumentar=int(arg[5])			#Quantas vezes o tamanho ira aumentar
+			update=int(arg[6])			#Taxa de update
+		criaIndice(arq,rep,tamanhoIni,tamanhoFinal,aumentar)
+		rodar(arq,rep,tamanhoIni,tamanhoFinal,aumentar,update)
 		return		
 	
 	elif(arg[1]=='g'):
