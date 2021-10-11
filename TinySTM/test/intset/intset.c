@@ -179,6 +179,21 @@ typedef intptr_t val_t;
 # define VAL_MIN                        INT_MIN
 # define VAL_MAX                        INT_MAX
 
+
+#ifdef PERSISTENT
+struct entry{ /* queue entry that contains arbitrary data */
+	int value; 
+};
+
+struct arrayPM{
+	size_t capacity; /* size of the entries array */
+	TOID(struct entry) entries[];
+};
+
+struct root{
+	TOID(struct arrayPM) head;
+};
+#else
 typedef struct node {
   val_t val;
   struct node *next;
@@ -187,6 +202,7 @@ typedef struct node {
 typedef struct intset {
   node_t *head;
 } intset_t;
+#endif
 
 TM_SAFE
 static node_t *new_node(val_t val, node_t *next, int transactional)
@@ -209,6 +225,25 @@ static node_t *new_node(val_t val, node_t *next, int transactional)
   return node;
 }
 
+#ifdef PERSISTENT
+static int queue_constructor(PMEMobjpool *pop, void *ptr, void *arg)
+{
+	struct queue *q = ptr;
+	size_t *capacity = arg;
+	q->capacity = *capacity;
+	/* atomic API requires that objects are persisted in the constructor */
+	pmemobj_persist(pop, q, sizeof(*q));
+
+	return 0;
+}
+
+static int set_new(PMEMobjpool *pop, TOID(struct queue) *q, size_t nentries)
+{
+	return POBJ_ALLOC(pop,q,struct queue,sizeof(struct queue) + sizeof(TOID(struct entry)) * nentries,queue_constructor,&nentries);
+
+}
+
+#else
 static intset_t *set_new()
 {
   intset_t *set;
@@ -224,6 +259,8 @@ static intset_t *set_new()
 
   return set;
 }
+#endif
+
 
 static void set_delete(intset_t *set)
 {
