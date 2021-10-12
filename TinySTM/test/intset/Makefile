@@ -1,34 +1,34 @@
-ROOT ?= ../..
+PROGS = lista_enc_completa lista_enc_final lista_enc_cabeca
 
-include $(ROOT)/Makefile.common
+LIBS = -lpmemobj -lpmem -pthread
 
-BINS = intset-hs intset-ll intset-rb intset-sl
-
-UNAME := $(shell uname)
-ifeq ($(UNAME), SunOS)
-# Solaris requires rt lib for nanosleep
-LDFLAGS += -lrt
+LINKER=$(CC)
+ifeq ($(COMPILE_LANG), cpp)
+LINKER=$(CXX)
 endif
 
-.PHONY:	all clean
+CFLAGS= -g -Wall -Wextra
 
-all:	$(BINS)
+MAKEFILE_DEPS=Makefile
 
-intset-hs.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_HASHSET -c -o $@ $<
+all: $(PROGS)
 
-intset-ll.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -c -o $@ $<
+%.o: %.c $(MAKEFILE_DEPS)
+	$(call check-cstyle, $<)
+	$(CC) -c -o $@ $(CFLAGS) $(INCS) $<
 
-intset-rb.o:	intset.c rbtree.c rbtree.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_RBTREE -c -o $@ $<
+%.o: %.cpp $(MAKEFILE_DEPS)
+	$(call check-cstyle, $<)
+	$(CXX) -c -o $@ $(CXXFLAGS) $(INCS) $<
 
-intset-sl.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_SKIPLIST -c -o $@ $<
+$(PROGS):
+	$(LINKER) -o $@ $^ $(LDFLAGS) $(LIBS)
 
-# FIXME in case of ABI $(TMLIB) must be replaced to abi/...
-$(BINS):	%:	%.o $(TMLIB)
-	$(LD) -o $@ $< $(LDFLAGS)
+
+lista_enc_completa: lista_enc_completa.o
+lista_enc_final: lista_enc_final.o
+lista_enc_cabeca: lista_enc_cabeca.o
 
 clean:
-	rm -f $(BINS) *.o
+	rm -f $(PROGS)
+	rm -f *.o
