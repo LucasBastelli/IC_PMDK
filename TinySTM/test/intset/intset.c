@@ -290,6 +290,9 @@ void set_delete(TOID(struct root) root){
 	return;
 }
 
+static int set_size(TOID(struct root) root)
+	return (D_RO(root)->size)
+
 #else
 static node_t *new_node(val_t val, node_t *next, int transactional)
 {
@@ -340,8 +343,6 @@ static void set_delete(intset_t *set)
   free(set);
 }
 
-#endif
-
 static int set_size(intset_t *set)
 {
   int size = 0;
@@ -356,6 +357,7 @@ static int set_size(intset_t *set)
 
   return size;
 }
+#endif
 
 static int set_contains(intset_t *set, val_t val, thread_data_t *td)
 {
