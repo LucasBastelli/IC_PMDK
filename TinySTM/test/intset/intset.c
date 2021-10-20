@@ -181,32 +181,28 @@ typedef intptr_t val_t;
 
 
 #ifdef PERSISTENT
-#define LAYOUT_NAME "LinkedList" /* will use this in create and open */
 #include <libpmemobj.h>
-int creatPool(const char *name)
-{
-	PMEMobjpool *pop = pmemobj_create(name, LAYOUT_NAME, PMEMOBJ_MIN_POOL, 0666);
-	if (pop == NULL) {
-		perror("pmemobj_create");
-		return 1;
-	}
-	pmemobj_close(pop);
-	return 0;
-}
-struct entry{ /* queue entry that contains arbitrary data */
-	int value; 
-};
+#define LAYOUT_NAME "LinkedList"
+POBJ_LAYOUT_BEGIN(queue);
+POBJ_LAYOUT_ROOT(queue, struct root);
+POBJ_LAYOUT_TOID(queue, struct entry);
+POBJ_LAYOUT_END(queue);
 
-struct arrayPM{
-	int back;
-	size_t capacity; /* size of the entries array */
-	TOID(struct entry) entries[];
+PMEMobjpool *pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_MIN_POOL, 0777);
+
+
+struct entry{
+	TOID(struct entry) next;
+	int valor;
 };
 
 struct root{
-	TOID(struct arrayPM) head;
+	int size;
+	TOID(struct entry) head;
 };
+
 #else
+
 typedef struct node {
   val_t val;
   struct node *next;
@@ -221,41 +217,77 @@ TM_SAFE
 
 
 #ifdef PERSISTENT
-static int new_node(PMEMobjpool *pop, struct queue *queue, int value)
-{
-	if(queue->capacity - (queue->back+1) == 0)
-		return -1; //Full
-	TX_BEGIN(pop) {
-		queue->back += 1;
-		// Alocar espaço
-		TOID(struct entry) entry = TX_ALLOC(struct entry,
-			sizeof(struct entry));
-		D_RW(entry)->value = value;
-		/* and then snapshot the queue entry that we will modify */
-		TX_ADD_DIRECT(&queue->entries[pos]);
-		queue->entries[queue->back-1] = entry;
+
+void remove_noh(PMEMobjpool *pop,TOID(struct entry) noh_anterior){
+	TOID(struct entry) noh_atual=D_RO(noh_anterior)->next;
+	if(D_RO(noh_atual)==D_RO(noh_anterior)){
+		printf("Nó atual é a cabeça!\n");
+		return;
+	}
+	TX_BEGIN(pop){
+		TX_ADD(noh_anterior);
+		D_RW(noh_anterior)->next=D_RO(noh_atual)->next; //Nó anterior aponta para o próximo nó do atual, e remove o nó atual
+		TX_FREE(noh_atual);
+	
+	
 	}TX_END
+	return;
+
+}
+
+static int new_node(int valor,TOID(struct entry) atual, int TRANSACTION){
+	TX_BEGIN(pop) {
+		/* now we can safely allocate and initialize the new entry */
+		TOID(struct entry) entry = TX_ALLOC(struct entry,sizeof(struct entry));
+		D_RW(entry)->valor = valor;
+		D_RW(entry)->next=D_RO(atual)->next;	
+		// snapshot before changing
+		TX_ADD(atual);
+		D_RW(atual)->next = entry;
+	} TX_END
 	return 0;
 }
 
-static int queue_constructor(PMEMobjpool *pop, void *ptr, void *arg)
-{
-	struct queue *q = ptr;
-	size_t *capacity = arg;
-	q->capacity = *capacity;
-	/* atomic API requires that objects are persisted in the constructor */
-	pmemobj_persist(pop, q, sizeof(*q));
-
-	return 0;
+TOID(struct root) insere_cabeca(int valor,TOID(struct root) root){
+	TX_BEGIN(pop) {
+		/* now we can safely allocate and initialize the new entry */
+		TOID(struct entry) entry = TX_ALLOC(struct entry,sizeof(struct entry));
+		D_RW(entry)->valor = valor;
+		D_RW(entry)->next=D_RO(root)->head;
+		// snapshot before changing
+		TX_ADD(root);
+		D_RW(root)->head = entry;
+	} TX_END	
+	return root;
 }
 
-static int set_new(PMEMobjpool *pop, TOID(struct queue) *q, size_t nentries)
+static int set_new()
 {
-	POBJ_ALLOC(pop,q,struct queue,sizeof(struct queue) + sizeof(TOID(struct entry)) * nentries,queue_constructor,&nentries);
-	max = new_node(pop,q,VAL_MAX);
-  	min = new_node(pop,q,VAL_MIN);
+	TOID(struct root) root = POBJ_ROOT(pop, struct root);
+	root=(insere_cabeca(VAL_MIN,root));
+	new_node(VAL_MAX,(D_RO(root)->head),0);
+	TX_BEGIN(pop)
+	{
+		TX_ADD(root);
+		D_RW(root)->size = 2;
+	}TX_END
   	return 0;
 
+}
+
+void set_delete(TOID(struct root) root){
+	TOID(struct entry) noh_atual=D_RO(root)->head;
+	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
+		TX_BEGIN(pop){
+			TX_ADD(root);
+			D_RW(root)->head=D_RO(noh_atual)->next;
+			TX_FREE(noh_atual);
+			noh_atual=D_RO(root)->head;
+
+
+		}TX_END
+	}
+	return;
 }
 
 #else
@@ -294,8 +326,6 @@ static intset_t *set_new()
 
   return set;
 }
-#endif
-
 
 static void set_delete(intset_t *set)
 {
@@ -309,6 +339,8 @@ static void set_delete(intset_t *set)
   }
   free(set);
 }
+
+#endif
 
 static int set_size(intset_t *set)
 {
