@@ -2,9 +2,11 @@ ROOT ?= ../..
 
 include $(ROOT)/Makefile.common
 
-LIBS = -lpmemobj -lpmem -pthread
+ifeq ($(PM), 1)
+	LDFLAGS += -lpmemobj
+endif
 
-BINS = intset-hs intset-ll intset-rb intset-sl
+BINS = intset-hs intset-ll intset-ll-pm intset-rb intset-sl
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), SunOS)
@@ -20,6 +22,9 @@ intset-hs.o:	intset.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_HASHSET -c -o $@ $<
 
 intset-ll.o:	intset.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -c -o $@ $<
+	
+intset-ll-pm.o: intset.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DPERSISTENT -c -o $@ $<
 
 intset-rb.o:	intset.c rbtree.c rbtree.h
