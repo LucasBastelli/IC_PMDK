@@ -183,12 +183,17 @@ typedef intptr_t val_t;
 #ifdef PERSISTENT
 #include <libpmemobj.h>
 #define LAYOUT_NAME "LinkedList"
+#define PMEMOBJ_SIZE (1024*1024*100)
 POBJ_LAYOUT_BEGIN(queue);
 POBJ_LAYOUT_ROOT(queue, struct root);
 POBJ_LAYOUT_TOID(queue, struct entry);
 POBJ_LAYOUT_END(queue);
 
-PMEMobjpool *pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_MIN_POOL, 0777);
+void CreatePool(){
+	PMEMobjpool *pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	pmemobj_close(pop);
+	return;
+}
 
 
 struct entry{
@@ -235,22 +240,21 @@ void remove_noh(PMEMobjpool *pop,TOID(struct entry) noh_anterior){
 
 }
 
-static int new_node(int valor,TOID(struct entry) atual, int TRANSACTION){
+TOID(struct entry) new_node(PMEMobjpool *pop,int valor,TOID(struct entry) nextNode, int TRANSACTION){
+	TOID(struct entry) entry;
 	TX_BEGIN(pop) {
 		/* now we can safely allocate and initialize the new entry */
-		TOID(struct entry) entry = TX_ALLOC(struct entry,sizeof(struct entry));
+		entry = TX_ALLOC(struct entry,sizeof(struct entry));
 		D_RW(entry)->valor = valor;
-		D_RW(entry)->next=D_RO(atual)->next;	
+		D_RW(entry)->next=nextNode;	
 		// snapshot before changing
-		TX_ADD(atual);
-		D_RW(atual)->next = entry;
 	} TX_END
-	return 0;
+	return entry;
 }
 
-TOID(struct root) insere_cabeca(int valor,TOID(struct root) root){
+/*TOID(struct root) insere_cabeca(PMEMobjpool *pop,int valor,TOID(struct root) root){
 	TX_BEGIN(pop) {
-		/* now we can safely allocate and initialize the new entry */
+		// now we can safely allocate and initialize the new entry
 		TOID(struct entry) entry = TX_ALLOC(struct entry,sizeof(struct entry));
 		D_RW(entry)->valor = valor;
 		D_RW(entry)->next=D_RO(root)->head;
@@ -259,23 +263,24 @@ TOID(struct root) insere_cabeca(int valor,TOID(struct root) root){
 		D_RW(root)->head = entry;
 	} TX_END	
 	return root;
-}
+}*/
 
-static int set_new()
+TOID(struct root) set_new(PMEMobjpool *pop)
 {
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
-	root=(insere_cabeca(VAL_MIN,root));
-	new_node(VAL_MAX,(D_RO(root)->head),0);
+	TOID(struct entry) valmax=new_node(pop,VAL_MAX,D_RO(root)->head,0);
+	TOID(struct entry) valmin=new_node(pop,VAL_MIN,valmax, 0);
 	TX_BEGIN(pop)
 	{
 		TX_ADD(root);
 		D_RW(root)->size = 2;
+		D_RW(root)->head=valmin;
 	}TX_END
-  	return 0;
+  	return root;
 
 }
 
-void set_delete(TOID(struct root) root){
+void set_delete(PMEMobjpool *pop,TOID(struct root) root){
 	TOID(struct entry) noh_atual=D_RO(root)->head;
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
@@ -291,7 +296,63 @@ void set_delete(TOID(struct root) root){
 }
 
 static int set_size(TOID(struct root) root)
-	return (D_RO(root)->size)
+{
+	return (D_RO(root)->size);
+}
+
+static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+	int result;
+	TOID(struct entry) prev, next;
+	prev = D_RO(set)->head;
+	next = D_RO(prev)->next;
+	while (D_RO(next)->valor < val) {
+		prev = next;
+		next = D_RO(prev)->next;
+	}
+	result = (D_RO(next)->valor == val);
+	
+	return result;
+}
+
+static int set_add(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread_data_t *td)
+{
+	int result;
+	TOID(struct entry) prev, next,aux;
+	prev = D_RO(set)->head;
+	next = D_RO(prev)->next;
+	while (D_RO(next)->valor < val) {
+		prev = next;
+		next = D_RO(prev)->next;
+	}
+	result = (D_RO(next)->valor == val);
+	if (result) {
+		aux = new_node(pop, val, next, 0);
+		D_RW(prev)->next=aux;		//Colocar dentro do transacao segura
+	}
+
+
+  return result;
+}
+
+static int set_remove(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread_data_t *td)
+{
+	int result;
+	TOID(struct entry) prev, next;
+	prev = D_RO(set)->head;
+	next = D_RO(prev)->next;
+	while (D_RO(next)->valor < val) {
+		prev = next;
+		next = D_RO(prev)->next;
+	}
+	result = (D_RO(next)->valor == val);
+	if (result) {
+		D_RW(prev)->next = D_RO(next)->next;
+		TX_FREE(next);		//Colocar dentro do transacao segura
+	}
+	return result;
+}
+
 
 #else
 static node_t *new_node(val_t val, node_t *next, int transactional)
@@ -357,7 +418,7 @@ static int set_size(intset_t *set)
 
   return size;
 }
-#endif
+
 
 static int set_contains(intset_t *set, val_t val, thread_data_t *td)
 {
@@ -604,6 +665,8 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
 #endif /* ! TM_COMPILER */
   return result;
 }
+
+#endif
 
 #elif defined(USE_RBTREE)
 
