@@ -1474,6 +1474,14 @@ static void *test(void *data)
 
 int main(int argc, char **argv)
 {
+	
+	#ifdef PERSISTENT
+	PMEMobjpool *pop = pmemobj_open(" list", LAYOUT_NAME);
+	if (pop == NULL) {
+		CreatePool();
+		PMEMobjpool *pop = pmemobj_open(" list", LAYOUT_NAME);;
+ 	}
+ 	#endif
   struct option long_options[] = {
     // These options don't set a flag
     {"help",                      no_argument,       NULL, 'h'},
