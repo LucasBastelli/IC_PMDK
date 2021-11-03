@@ -134,8 +134,22 @@ static inline int rand_range(int n, unsigned short *seed)
   return v;
 }
 
+#ifdef PERSISTENT
+#include <libpmemobj.h>
+#define LAYOUT_NAME "LinkedList"
+#define PMEMOBJ_SIZE (1024*1024*100)
+POBJ_LAYOUT_BEGIN(queue);
+POBJ_LAYOUT_ROOT(queue, struct root);
+POBJ_LAYOUT_TOID(queue, struct entry);
+POBJ_LAYOUT_END(queue);
+#endif
+
 typedef struct thread_data {
+	#ifdef  PERSISTENT
+	TOID(struct root) set;
+	#else
   struct intset *set;
+  	#endif
   struct barrier *barrier;
   unsigned long nb_add;
   unsigned long nb_remove;
@@ -181,13 +195,7 @@ typedef intptr_t val_t;
 
 
 #ifdef PERSISTENT
-#include <libpmemobj.h>
-#define LAYOUT_NAME "LinkedList"
-#define PMEMOBJ_SIZE (1024*1024*100)
-POBJ_LAYOUT_BEGIN(queue);
-POBJ_LAYOUT_ROOT(queue, struct root);
-POBJ_LAYOUT_TOID(queue, struct entry);
-POBJ_LAYOUT_END(queue);
+
 
 void CreatePool(){
 	PMEMobjpool *pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
@@ -198,7 +206,7 @@ void CreatePool(){
 
 struct entry{
 	TOID(struct entry) next;
-	int valor;
+	val_t val;
 };
 
 struct root{
@@ -247,7 +255,7 @@ TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTI
 	TX_BEGIN(pop) {
 		/* now we can safely allocate and initialize the new entry */
 		entry = TX_ALLOC(struct entry,sizeof(struct entry));
-		D_RW(entry)->valor = valor;
+		D_RW(entry)->val = valor;
 		D_RW(entry)->next=nextNode;	
 		// snapshot before changing
 	} TX_END
@@ -310,11 +318,11 @@ static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
 	TOID(struct entry) prev, next;
 	prev = D_RO(set)->head;
 	next = D_RO(prev)->next;
-	while (D_RO(next)->valor < val) {
+	while (D_RO(next)->val < val) {
 		prev = next;
 		next = D_RO(prev)->next;
 	}
-	result = (D_RO(next)->valor == val);
+	result = (D_RO(next)->val == val);
 	
 	return result;
 }
@@ -326,11 +334,11 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 	TOID(struct entry) prev, next,aux;
 	prev = D_RO(set)->head;
 	next = D_RO(prev)->next;
-	while (D_RO(next)->valor < val) {
+	while (D_RO(next)->val < val) {
 		prev = next;
 		next = D_RO(prev)->next;
 	}
-	result = (D_RO(next)->valor == val);
+	result = (D_RO(next)->val == val);
 	if (result) {
 		TX_BEGIN(pop){
 			aux = new_node(val, next, 0);
@@ -349,11 +357,11 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 	TOID(struct entry) prev, next;
 	prev = D_RO(set)->head;
 	next = D_RO(prev)->next;
-	while (D_RO(next)->valor < val) {
+	while (D_RO(next)->val < val) {
 		prev = next;
 		next = D_RO(prev)->next;
 	}
-	result = (D_RO(next)->valor == val);
+	result = (D_RO(next)->val == val);
 	if (result) {
 		TX_BEGIN(pop){
 			D_RW(prev)->next = D_RO(next)->next;
@@ -1500,8 +1508,11 @@ int main(int argc, char **argv)
 #endif /* LINKEDLIST */
     {NULL, 0, NULL, 0}
   };
-
+#ifdef PERSISTENT
+	TOID(struct root) set;
+#else
   intset_t *set;
+#endif
   int i, c, val, size, ret;
   unsigned long reads, updates;
 #ifndef TM_COMPILER
