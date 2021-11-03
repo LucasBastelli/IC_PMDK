@@ -223,7 +223,8 @@ TM_SAFE
 
 #ifdef PERSISTENT
 
-void remove_noh(PMEMobjpool *pop,TOID(struct entry) noh_anterior){
+void remove_noh(TOID(struct entry) noh_anterior){
+	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(noh_anterior)->next;
 	if(D_RO(noh_atual)==D_RO(noh_anterior)){
 		printf("Nó atual é a cabeça!\n");
@@ -240,7 +241,8 @@ void remove_noh(PMEMobjpool *pop,TOID(struct entry) noh_anterior){
 
 }
 
-TOID(struct entry) new_node(PMEMobjpool *pop,int valor,TOID(struct entry) nextNode, int TRANSACTION){
+TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTION){
+	static PMEMobjpool *pop;
 	TOID(struct entry) entry;
 	TX_BEGIN(pop) {
 		/* now we can safely allocate and initialize the new entry */
@@ -265,11 +267,12 @@ TOID(struct entry) new_node(PMEMobjpool *pop,int valor,TOID(struct entry) nextNo
 	return root;
 }*/
 
-TOID(struct root) set_new(PMEMobjpool *pop)
+TOID(struct root) set_new()
 {
+	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
-	TOID(struct entry) valmax=new_node(pop,VAL_MAX,D_RO(root)->head,0);
-	TOID(struct entry) valmin=new_node(pop,VAL_MIN,valmax, 0);
+	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0);
+	TOID(struct entry) valmin=new_node(VAL_MIN,valmax, 0);
 	TX_BEGIN(pop)
 	{
 		TX_ADD(root);
@@ -280,7 +283,8 @@ TOID(struct root) set_new(PMEMobjpool *pop)
 
 }
 
-void set_delete(PMEMobjpool *pop,TOID(struct root) root){
+void set_delete(TOID(struct root) root){
+	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(root)->head;
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
@@ -315,8 +319,9 @@ static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
 	return result;
 }
 
-static int set_add(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread_data_t *td)
+static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 {
+	static PMEMobjpool *pop;
 	int result;
 	TOID(struct entry) prev, next,aux;
 	prev = D_RO(set)->head;
@@ -327,16 +332,19 @@ static int set_add(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread_da
 	}
 	result = (D_RO(next)->valor == val);
 	if (result) {
-		aux = new_node(pop, val, next, 0);
-		D_RW(prev)->next=aux;		//Colocar dentro do transacao segura
+		TX_BEGIN(pop){
+			aux = new_node(val, next, 0);
+			D_RW(prev)->next=aux;
+		}TX_END		
 	}
 
 
   return result;
 }
 
-static int set_remove(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread_data_t *td)
+static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 {
+	static PMEMobjpool *pop;
 	int result;
 	TOID(struct entry) prev, next;
 	prev = D_RO(set)->head;
@@ -347,8 +355,10 @@ static int set_remove(PMEMobjpool *pop, TOID(struct root) set, val_t val, thread
 	}
 	result = (D_RO(next)->valor == val);
 	if (result) {
-		D_RW(prev)->next = D_RO(next)->next;
-		TX_FREE(next);		//Colocar dentro do transacao segura
+		TX_BEGIN(pop){
+			D_RW(prev)->next = D_RO(next)->next;
+			TX_FREE(next);
+		}TX_END
 	}
 	return result;
 }
