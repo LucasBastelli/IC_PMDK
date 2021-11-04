@@ -136,12 +136,13 @@ static inline int rand_range(int n, unsigned short *seed)
 
 #ifdef PERSISTENT
 #include <libpmemobj.h>
-#define LAYOUT_NAME "LinkedList"
 #define PMEMOBJ_SIZE (1024*1024*100)
 POBJ_LAYOUT_BEGIN(queue);
 POBJ_LAYOUT_ROOT(queue, struct root);
 POBJ_LAYOUT_TOID(queue, struct entry);
 POBJ_LAYOUT_END(queue);
+	
+static PMEMobjpool *pop;
 #endif
 
 typedef struct thread_data {
@@ -196,9 +197,10 @@ typedef intptr_t val_t;
 
 #ifdef PERSISTENT
 
+#define LAYOUT_NAME "LinkedList"
 
 void CreatePool(){
-	PMEMobjpool *pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
 	pmemobj_close(pop);
 	return;
 }
@@ -232,7 +234,7 @@ TM_SAFE
 #ifdef PERSISTENT
 
 void remove_noh(TOID(struct entry) noh_anterior){
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(noh_anterior)->next;
 	if(D_RO(noh_atual)==D_RO(noh_anterior)){
 		printf("Nó atual é a cabeça!\n");
@@ -250,7 +252,7 @@ void remove_noh(TOID(struct entry) noh_anterior){
 }
 
 TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTION){
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	TOID(struct entry) entry;
 	TX_BEGIN(pop) {
 		/* now we can safely allocate and initialize the new entry */
@@ -277,7 +279,7 @@ TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTI
 
 TOID(struct root) set_new()
 {
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
 	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0);
 	TOID(struct entry) valmin=new_node(VAL_MIN,valmax, 0);
@@ -292,7 +294,7 @@ TOID(struct root) set_new()
 }
 
 void set_delete(TOID(struct root) root){
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(root)->head;
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
@@ -329,7 +331,7 @@ static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
 
 static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 {
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	int result;
 	TOID(struct entry) prev, next,aux;
 	prev = D_RO(set)->head;
@@ -352,7 +354,7 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 
 static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 {
-	static PMEMobjpool *pop;
+//	static PMEMobjpool *pop;
 	int result;
 	TOID(struct entry) prev, next;
 	prev = D_RO(set)->head;
@@ -1484,10 +1486,10 @@ int main(int argc, char **argv)
 {
 	
 	#ifdef PERSISTENT
-	PMEMobjpool *pop = pmemobj_open(" list", LAYOUT_NAME);
+	pop = pmemobj_open(" list", LAYOUT_NAME);
 	if (pop == NULL) {
 		CreatePool();
-		PMEMobjpool *pop = pmemobj_open(" list", LAYOUT_NAME);;
+		pop = pmemobj_open(" list", LAYOUT_NAME);;
  	}
  	#endif
   struct option long_options[] = {
