@@ -1485,13 +1485,6 @@ static void *test(void *data)
 int main(int argc, char **argv)
 {
 	
-	#ifdef PERSISTENT
-	pop = pmemobj_open(" list", LAYOUT_NAME);
-	if (pop == NULL) {
-		CreatePool();
-		pop = pmemobj_open(" list", LAYOUT_NAME);;
- 	}
- 	#endif
   struct option long_options[] = {
     // These options don't set a flag
     {"help",                      no_argument,       NULL, 'h'},
@@ -1700,6 +1693,14 @@ int main(int argc, char **argv)
     srand((int)time(NULL));
   else
     srand(seed);
+	
+  #ifdef PERSISTENT
+	pop = pmemobj_open(" list", LAYOUT_NAME);
+	if (pop == NULL) {
+		CreatePool();
+		pop = pmemobj_open(" list", LAYOUT_NAME);;
+ 	}
+ 	#endif
 
   set = set_new(INIT_SET_PARAMETERS);
 

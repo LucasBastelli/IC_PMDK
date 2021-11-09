@@ -2,9 +2,7 @@ ROOT ?= ../..
 
 include $(ROOT)/Makefile.common
 
-#ifeq ($(PM), 1)
 LDFLAGS += -lpmemobj
-#endif
 
 BINS = intset-hs intset-ll intset-ll-pm intset-rb intset-sl
 
