@@ -201,7 +201,6 @@ typedef intptr_t val_t;
 
 void CreatePool(){
 	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
-	pmemobj_close(pop);
 	return;
 }
 
@@ -232,6 +231,17 @@ TM_SAFE
 
 
 #ifdef PERSISTENT
+
+static void print_todos(const TOID(struct entry) str)
+{
+	const struct entry *aux= D_RO(str);
+	printf("Numero: %ld\n", aux->val);
+	if (!TOID_IS_NULL(D_RO(str)->next))
+	{
+		print_todos(D_RO(str)->next);	//Utiliza recursão para printar todos
+	}
+	return;
+}
 
 void remove_noh(TOID(struct entry) noh_anterior){
 //	static PMEMobjpool *pop;
@@ -281,6 +291,13 @@ TOID(struct root) set_new()
 {
 //	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
+	if (!TOID_IS_NULL(D_RO(root)->head))
+	{
+		print_todos(D_RO(root)->head);
+	}
+	else{
+		printf("vazio\n");
+	}
 	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0);
 	TOID(struct entry) valmin=new_node(VAL_MIN,valmax, 0);
 	TX_BEGIN(pop)
@@ -289,6 +306,7 @@ TOID(struct root) set_new()
 		D_RW(root)->size = 2;
 		D_RW(root)->head=valmin;
 	}TX_END
+	//Até aki funcionou
   	return root;
 
 }
@@ -340,7 +358,7 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 		prev = next;
 		next = D_RO(prev)->next;
 	}
-	result = (D_RO(next)->val == val);
+	result = (D_RO(next)->val != val);
 	if (result) {
 		TX_BEGIN(pop){
 			aux = new_node(val, next, 0);
@@ -1695,17 +1713,20 @@ int main(int argc, char **argv)
     srand(seed);
 	
   #ifdef PERSISTENT
-	pop = pmemobj_open(" list", LAYOUT_NAME);
+	pop = pmemobj_open("list", LAYOUT_NAME);
 	if (pop == NULL) {
 		CreatePool();
-		pop = pmemobj_open(" list", LAYOUT_NAME);;
+		//pop = pmemobj_open("list", LAYOUT_NAME);
+		if (pop == NULL) {
+			printf("pmemobj_open\n");
+			return 1;
+ 		}
  	}
  	#endif
 
   set = set_new(INIT_SET_PARAMETERS);
 
   stop = 0;
-
   /* Thread-local seed for main thread */
   rand_init(main_seed);
 
