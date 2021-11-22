@@ -4,7 +4,7 @@ include $(ROOT)/Makefile.common
 
 LDFLAGS += -lpmemobj
 
-BINS = intset-hs intset-ll intset-ll-pm intset-rb intset-sl
+BINS = intset-hs intset-ll intset-ll-pm intset-ll-pm-DB intset-rb intset-sl
 
 UNAME := $(shell uname)
 ifeq ($(UNAME), SunOS)
@@ -24,6 +24,9 @@ intset-ll.o:	intset.c
 	
 intset-ll-pm.o: intset.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DPERSISTENT -c -o $@ $<
+	
+intset-ll-pm-DB.o: intset.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DPERSISTENT -DDEBUG_PM -c -o $@ $<
 
 intset-rb.o:	intset.c rbtree.c rbtree.h
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_RBTREE -c -o $@ $<
