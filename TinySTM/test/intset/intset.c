@@ -201,6 +201,10 @@ typedef intptr_t val_t;
 
 void CreatePool(){
 	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	if(pop==NULL){
+		printf("pop é null/n");
+		exit(-1);
+	}
 	return;
 }
 
@@ -289,6 +293,7 @@ TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTI
 
 TOID(struct root) set_new()
 {
+
 //	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
 	if (!TOID_IS_NULL(D_RO(root)->head))
@@ -1500,6 +1505,64 @@ static void *test(void *data)
   return NULL;
 }
 
+#ifdef DEBUG_PM
+int main()
+{
+	pop = pmemobj_open("list", LAYOUT_NAME);
+	if (pop == NULL) {
+		CreatePool();
+		//pop = pmemobj_open("list", LAYOUT_NAME);
+ 	}
+ 	TOID(struct root) set = set_new();//Ele ja imprime a lista anterior
+ 	int cont=0;
+ 	if (!TOID_IS_NULL(D_RO(set)->head))//Se não esvaziou, ele imprime de novo
+	{
+		print_todos(D_RO(set)->head);
+	}
+	else{
+		printf("vazio\n");
+	}
+ 	while(cont<10){
+	 	if(set_add(set, cont, 0)){
+	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
+	 	}
+	 	else{
+	 	printf("%d ja esta na lista\n",cont);
+	 	}
+	 	cont++;
+ 	
+ 	}
+ 	cont=0;
+ 	while(cont<10){// deve imprimir 10x que ja esta na lista
+	 	if(set_add(set, cont, 0)){
+	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
+	 	}
+	 	else{
+	 	printf("%d ja esta na lista\n",cont);
+	 	}
+	 	cont++;
+ 	
+ 	}
+ 	set_delete(set);// Apaga a lista inteira
+ 	set = set_new();//Precisa sempre usar o set_new, se nao ele buga, ele avisará que esta vazio
+ 	cont=0;
+ 	while(cont<10){// Como apagou a lista, ele ira adicionar de novo
+	 	if(set_add(set, cont, 0)){
+	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
+	 	}
+	 	else{
+	 	printf("%d ja esta na lista\n",cont);
+	 	}
+	 	cont++;
+ 	
+ 	}
+ 	
+ 	
+ 	
+ 	
+
+}
+#else
 int main(int argc, char **argv)
 {
 	
@@ -1717,10 +1780,6 @@ int main(int argc, char **argv)
 	if (pop == NULL) {
 		CreatePool();
 		//pop = pmemobj_open("list", LAYOUT_NAME);
-		if (pop == NULL) {
-			printf("pmemobj_open\n");
-			return 1;
- 		}
  	}
  	#endif
 
@@ -1749,6 +1808,7 @@ int main(int argc, char **argv)
   /* Populate set */
   printf("Adding %d entries to set\n", initial);
   i = 0;
+
   while (i < initial) {
     val = rand_range(range, main_seed) + 1;
     if (set_add(set, val, 0))
@@ -1924,3 +1984,4 @@ int main(int argc, char **argv)
 
   return ret;
 }
+#endif
