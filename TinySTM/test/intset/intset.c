@@ -1508,11 +1508,16 @@ static void *test(void *data)
 #ifdef DEBUG_PM
 int main()
 {
+  fprintf(stdout, "Trying to open pool... ");
 	pop = pmemobj_open("list", LAYOUT_NAME);
 	if (pop == NULL) {
+    fprintf(stdout, "not found.\nCreating a new one... ");
 		CreatePool();
+    fprintf(stdout, "done.\n");
 		//pop = pmemobj_open("list", LAYOUT_NAME);
- 	}
+ 	} else { fprintf(stdout, "done.\n"); }
+
+  fprintf(stdout, "Creating a new set...");
  	TOID(struct root) set = set_new();//Ele ja imprime a lista anterior
  	int cont=0;
  	if (!TOID_IS_NULL(D_RO(set)->head))//Se não esvaziou, ele imprime de novo
