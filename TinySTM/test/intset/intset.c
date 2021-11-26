@@ -296,13 +296,18 @@ TOID(struct root) set_new()
 
 //	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
+	#ifdef DEBUG_PM
 	if (!TOID_IS_NULL(D_RO(root)->head))
 	{
+		printf("Ao abrir pool, encontrado numeros inseridos:\n");
 		print_todos(D_RO(root)->head);
+		return root;
 	}
 	else{
-		printf("vazio\n");
+		printf("Ao abrir pool, esta vazio\n");
 	}
+	printf("Inserindo os valores %d e %d\n",VAL_MIN,VAL_MAX);
+	#endif
 	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0);
 	TOID(struct entry) valmin=new_node(VAL_MIN,valmax, 0);
 	TX_BEGIN(pop)
@@ -311,7 +316,6 @@ TOID(struct root) set_new()
 		D_RW(root)->size = 2;
 		D_RW(root)->head=valmin;
 	}TX_END
-	//Até aki funcionou
   	return root;
 
 }
@@ -1508,49 +1512,42 @@ static void *test(void *data)
 #ifdef DEBUG_PM
 int main()
 {
-  fprintf(stdout, "Trying to open pool... ");
 	pop = pmemobj_open("list", LAYOUT_NAME);
 	if (pop == NULL) {
-    fprintf(stdout, "not found.\nCreating a new one... ");
 		CreatePool();
-    fprintf(stdout, "done.\n");
 		//pop = pmemobj_open("list", LAYOUT_NAME);
- 	} else { fprintf(stdout, "done.\n"); }
-
-  fprintf(stdout, "Creating a new set...");
+ 	}
  	TOID(struct root) set = set_new();//Ele ja imprime a lista anterior
+ 	int numeros[6]={0,9,37,5,2,72};
  	int cont=0;
- 	if (!TOID_IS_NULL(D_RO(set)->head))//Se não esvaziou, ele imprime de novo
-	{
-		print_todos(D_RO(set)->head);
-	}
-	else{
-		printf("vazio\n");
-	}
- 	while(cont<10){
-	 	if(set_add(set, cont, 0)){
-	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
+ 	printf("Agora será inserido números\n");
+ 	while(cont<6){
+	 	if(set_add(set, numeros[cont], 0)){
+	 		printf("%d inserido\n",numeros[cont]);//Ele testa se ja existe e insere
 	 	}
 	 	else{
-	 	printf("%d ja esta na lista\n",cont);
+	 		printf("%d ja esta na lista\n",numeros[cont]);
 	 	}
 	 	cont++;
- 	
  	}
+ 	printf("Agora será impresso todos os números:\n");
+ 	print_todos(D_RO(set)->head);
+ 	printf("Agora vamos remover o número 5 e o 37\n");
+ 	set_remove(set,5,0);
+ 	set_remove(set,37,0);
+ 	printf("Agora será impresso todos os números:\n");
+ 	print_todos(D_RO(set)->head);
  	cont=0;
- 	while(cont<10){// deve imprimir 10x que ja esta na lista
-	 	if(set_add(set, cont, 0)){
-	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
-	 	}
-	 	else{
-	 	printf("%d ja esta na lista\n",cont);
-	 	}
-	 	cont++;
- 	
- 	}
+ 	printf("Inserindo os numeros repetidos 9 e 2 para testar:\n");
+ 	set_add(set,9,0);
+ 	set_add(set,2,0);
+ 	printf("Agora será impresso todos os números:\n");
+ 	print_todos(D_RO(set)->head);
+ 	printf("Agora vamos apagar toda a lista e comecar de novo\n");
  	set_delete(set);// Apaga a lista inteira
  	set = set_new();//Precisa sempre usar o set_new, se nao ele buga, ele avisará que esta vazio
  	cont=0;
+ 	printf("Inserindo de 1 a 10\n");
  	while(cont<10){// Como apagou a lista, ele ira adicionar de novo
 	 	if(set_add(set, cont, 0)){
 	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
