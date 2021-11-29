@@ -202,7 +202,7 @@ typedef intptr_t val_t;
 void CreatePool(){
 	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
 	if(pop==NULL){
-		printf("pop é null/n");
+		printf("Could not create pool/n");
 		exit(-1);
 	}
 	return;
@@ -300,7 +300,15 @@ TOID(struct root) set_new()
 	if (!TOID_IS_NULL(D_RO(root)->head))
 	{
 		printf("Ao abrir pool, encontrado numeros inseridos:\n");
+    printf("Number of itens: %d\n", D_RO(root)->size);
 		print_todos(D_RO(root)->head);
+
+    /*
+     * Pelo o que conversamos não vamos no momento reutilizar o
+     * pool. Portanto acho que devemos apagar o pool e seguir
+     * com o código (adicionar os sentinelas) ao invés de retornar o root
+     * aberto
+     * */
 		return root;
 	}
 	else{
@@ -308,7 +316,12 @@ TOID(struct root) set_new()
 	}
 	printf("Inserindo os valores %d e %d\n",VAL_MIN,VAL_MAX);
 	#endif
-	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0);
+
+  /*
+   * Há um problema com o resto deste código. Pense no que poderia acontecer
+   * de errado caso acabe a energia em algum momento abaixo.
+   */
+	TOID(struct entry) valmax=new_node(VAL_MAX,D_RO(root)->head,0); /* nao deveria ser NULL ao inves de head? */
 	TOID(struct entry) valmin=new_node(VAL_MIN,valmax, 0);
 	TX_BEGIN(pop)
 	{
@@ -316,13 +329,22 @@ TOID(struct root) set_new()
 		D_RW(root)->size = 2;
 		D_RW(root)->head=valmin;
 	}TX_END
-  	return root;
+
+#ifdef DEBUG_PM
+  printf("Done. List contents:\n");
+  print_todos(D_RO(root)->head);
+#endif
+  
+  return root;
 
 }
 
 void set_delete(TOID(struct root) root){
 //	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(root)->head;
+    /*
+     *  Falta ajustar tamanho para zero.
+     */
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
 			TX_ADD(root);
@@ -369,6 +391,9 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 	}
 	result = (D_RO(next)->val != val);
 	if (result) {
+    /*
+     *  Está faltando incrementar o tamanho.
+     */
 		TX_BEGIN(pop){
 			aux = new_node(val, next, 0);
 			D_RW(prev)->next=aux;
@@ -392,6 +417,9 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 	}
 	result = (D_RO(next)->val == val);
 	if (result) {
+    /*
+     *  Está faltando decrementar o tamanho.
+     */
 		TX_BEGIN(pop){
 			D_RW(prev)->next = D_RO(next)->next;
 			TX_FREE(next);
