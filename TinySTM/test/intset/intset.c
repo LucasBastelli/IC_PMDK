@@ -296,27 +296,6 @@ TOID(struct root) set_new()
 
 //	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
-	#ifdef DEBUG_PM
-	if (!TOID_IS_NULL(D_RO(root)->head))
-	{
-		printf("Ao abrir pool, encontrado numeros inseridos:\n");
-    printf("Number of itens: %d\n", D_RO(root)->size);
-		print_todos(D_RO(root)->head);
-
-    /*
-     * Pelo o que conversamos não vamos no momento reutilizar o
-     * pool. Portanto acho que devemos apagar o pool e seguir
-     * com o código (adicionar os sentinelas) ao invés de retornar o root
-     * aberto
-     * */
-		return root;
-	}
-	else{
-		printf("Ao abrir pool, esta vazio\n");
-	}
-	printf("Inserindo os valores %d e %d\n",VAL_MIN,VAL_MAX);
-	#endif
-
   /*
    * Há um problema com o resto deste código. Pense no que poderia acontecer
    * de errado caso acabe a energia em algum momento abaixo.
@@ -342,13 +321,11 @@ TOID(struct root) set_new()
 void set_delete(TOID(struct root) root){
 //	static PMEMobjpool *pop;
 	TOID(struct entry) noh_atual=D_RO(root)->head;
-    /*
-     *  Falta ajustar tamanho para zero.
-     */
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
 			TX_ADD(root);
 			D_RW(root)->head=D_RO(noh_atual)->next;
+			D_RW(root)->size = (D_RO(root)->size)-1;
 			TX_FREE(noh_atual);
 			noh_atual=D_RO(root)->head;
 
@@ -391,10 +368,8 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 	}
 	result = (D_RO(next)->val != val);
 	if (result) {
-    /*
-     *  Está faltando incrementar o tamanho.
-     */
 		TX_BEGIN(pop){
+			D_RW(set)->size = (D_RO(set)->size)+1;
 			aux = new_node(val, next, 0);
 			D_RW(prev)->next=aux;
 		}TX_END		
@@ -417,10 +392,8 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 	}
 	result = (D_RO(next)->val == val);
 	if (result) {
-    /*
-     *  Está faltando decrementar o tamanho.
-     */
 		TX_BEGIN(pop){
+			D_RW(set)->size = (D_RO(set)->size)-1;
 			D_RW(prev)->next = D_RO(next)->next;
 			TX_FREE(next);
 		}TX_END
@@ -1560,17 +1533,20 @@ int main()
  	}
  	printf("Agora será impresso todos os números:\n");
  	print_todos(D_RO(set)->head);
+ 	printf("tamanho da pool: %d\n",(D_RO(set)->size));
  	printf("Agora vamos remover o número 5 e o 37\n");
  	set_remove(set,5,0);
  	set_remove(set,37,0);
  	printf("Agora será impresso todos os números:\n");
  	print_todos(D_RO(set)->head);
+ 	 printf("tamanho da pool: %d\n",(D_RO(set)->size));
  	cont=0;
  	printf("Inserindo os numeros repetidos 9 e 2 para testar:\n");
  	set_add(set,9,0);
  	set_add(set,2,0);
  	printf("Agora será impresso todos os números:\n");
  	print_todos(D_RO(set)->head);
+ 	printf("tamanho da pool: %d\n",(D_RO(set)->size));
  	printf("Agora vamos apagar toda a lista e comecar de novo\n");
  	set_delete(set);// Apaga a lista inteira
  	set = set_new();//Precisa sempre usar o set_new, se nao ele buga, ele avisará que esta vazio
@@ -1586,13 +1562,10 @@ int main()
 	 	cont++;
  	
  	}
- 	
- 	
- 	
- 	
-
+ 	set_delete(set);// Apaga a lista inteira	
 }
 #else
+
 int main(int argc, char **argv)
 {
 	
