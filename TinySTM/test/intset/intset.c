@@ -296,10 +296,6 @@ TOID(struct root) set_new()
 
 //	static PMEMobjpool *pop;
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
-  /*
-   * Há um problema com o resto deste código. Pense no que poderia acontecer
-   * de errado caso acabe a energia em algum momento abaixo.
-   */
 	TX_BEGIN(pop)
 	{
 		valmax = TX_ALLOC(struct entry,sizeof(struct entry));
