@@ -56,6 +56,28 @@ TM_PURE
 void exit(int status);
 TM_PURE 
 void perror(const char *s);
+#elif defined(NO_STM)
+
+# define TM_START(tid, ro)            /* nothing */
+# define TM_START_TS(ts, label)       /* nothing */
+# define TM_LOAD(addr)                      (*addr)
+# define TM_UNIT_LOAD(addr, ts)             (*add)
+# define TM_STORE(addr, value)              (*addr = value)
+# define TM_UNIT_STORE(addr, value, ts)     (*addr = value)
+# define TM_COMMIT                    /* nothing */    
+# define TM_MALLOC(size)                    malloc(size)
+# define TM_FREE(addr)                      free(addr)
+# define TM_FREE2(addr, size)               free(addr)
+
+# define TM_INIT                      /* nothing */
+# define TM_EXIT                      /* nothing */      
+# define TM_INIT_THREAD               /* nothing */      
+# define TM_EXIT_THREAD               /* nothing */      
+
+/* Annotations used in this benchmark */
+# define TM_SAFE
+# define TM_PURE
+
 #else /* Compile with explicit calls to tinySTM */
 
 # include "stm.h"
@@ -298,10 +320,10 @@ TOID(struct root) set_new()
 	TOID(struct root) root = POBJ_ROOT(pop, struct root);
 	TX_BEGIN(pop)
 	{
-		valmax = TX_ALLOC(struct entry,sizeof(struct entry));
+		TOID(struct entry) valmax = TX_ALLOC(struct entry,sizeof(struct entry));
 		D_RW(valmax)->val = VAL_MAX;
 		D_RW(valmax)->next=TOID_NULL(struct entry);
-		valmin = TX_ALLOC(struct entry,sizeof(struct entry));
+		TOID(struct entry) valmin = TX_ALLOC(struct entry,sizeof(struct entry));
 		D_RW(valmin)->val = VAL_MIN;
 		D_RW(valmin)->next=valmax;
 		TX_ADD(root);
@@ -502,6 +524,7 @@ static int set_contains(intset_t *set, val_t val, thread_data_t *td)
     TM_COMMIT;
   } 
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   else {
     /* Unit transactions */
     stm_word_t ts, start_ts, val_ts;
@@ -534,6 +557,7 @@ static int set_contains(intset_t *set, val_t val, thread_data_t *td)
     }
     result = (v == val);
   }
+#endif
 #endif /* TM_COMPILER */
 
   return result;
@@ -579,6 +603,7 @@ static int set_add(intset_t *set, val_t val, thread_data_t *td)
     TM_COMMIT;
   } 
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   else {
     /* Unit transactions */
     stm_word_t ts, start_ts, val_ts;
@@ -619,6 +644,7 @@ static int set_add(intset_t *set, val_t val, thread_data_t *td)
       }
     }
   }
+#endif
 #endif /* ! TM_COMPILER */
 
   return result;
@@ -669,6 +695,7 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
     TM_COMMIT;
   } 
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   else {
     /* Unit transactions */
     stm_word_t ts, start_ts, val_ts;
@@ -710,6 +737,7 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
       TM_COMMIT;
     }
   }
+#endif
 #endif /* ! TM_COMPILER */
   return result;
 }
@@ -1490,6 +1518,7 @@ static void *test(void *data)
     }
   }
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   stm_get_stats("nb_aborts", &d->nb_aborts);
   stm_get_stats("nb_aborts_1", &d->nb_aborts_1);
   stm_get_stats("nb_aborts_2", &d->nb_aborts_2);
@@ -1503,6 +1532,7 @@ static void *test(void *data)
   stm_get_stats("locked_reads_ok", &d->locked_reads_ok);
   stm_get_stats("locked_reads_failed", &d->locked_reads_failed);
   stm_get_stats("max_retries", &d->max_retries);
+#endif  
 #endif /* ! TM_COMPILER */
   /* Free transaction */
   TM_EXIT_THREAD;
@@ -1595,6 +1625,7 @@ int main(int argc, char **argv)
   int i, c, val, size, ret;
   unsigned long reads, updates;
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   char *s;
   unsigned long aborts, aborts_1, aborts_2,
     aborts_locked_read, aborts_locked_write,
@@ -1602,6 +1633,7 @@ int main(int argc, char **argv)
     aborts_invalid_memory, aborts_killed,
     locked_reads_ok, locked_reads_failed, max_retries;
   stm_ab_stats_t ab_stats;
+#endif  
 #endif /* ! TM_COMPILER */
   thread_data_t *data;
   pthread_t *threads;
@@ -1617,7 +1649,9 @@ int main(int argc, char **argv)
   int update = DEFAULT_UPDATE;
   int alternate = 1;
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   char *cm = NULL;
+#endif  
 #endif /* ! TM_COMPILER */
 #ifdef USE_LINKEDLIST
   int unit_tx = 0;
@@ -1692,9 +1726,11 @@ int main(int argc, char **argv)
        alternate = 0;
        break;
 #ifndef TM_COMPILER
+#ifndef NO_STM  
      case 'c':
        cm = optarg;
        break;
+#endif       
 #endif /* ! TM_COMPILER */
      case 'd':
        duration = atoi(optarg);
@@ -1743,7 +1779,9 @@ int main(int argc, char **argv)
   printf("Set type     : hash set\n");
 #endif /* defined(USE_HASHSET) */
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   printf("CM           : %s\n", (cm == NULL ? "DEFAULT" : cm));
+#endif
 #endif /* ! TM_COMPILER */
   printf("Duration     : %d\n", duration);
   printf("Initial size : %d\n", initial);
@@ -1797,6 +1835,7 @@ int main(int argc, char **argv)
   TM_INIT;
 
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   if (stm_get_parameter("compile_flags", &s))
     printf("STM flags    : %s\n", s);
 
@@ -1804,6 +1843,7 @@ int main(int argc, char **argv)
     if (stm_set_parameter("cm_policy", cm) == 0)
       printf("WARNING: cannot set contention manager \"%s\"\n", cm);
   }
+#endif
 #endif /* ! TM_COMPILER */
   if (alternate == 0 && range != initial * 2)
     printf("WARNING: range is not twice the initial set size\n");
@@ -1837,6 +1877,7 @@ int main(int argc, char **argv)
     data[i].nb_contains = 0;
     data[i].nb_found = 0;
 #ifndef TM_COMPILER
+#ifndef NO_STM  
     data[i].nb_aborts = 0;
     data[i].nb_aborts_1 = 0;
     data[i].nb_aborts_2 = 0;
@@ -1850,6 +1891,7 @@ int main(int argc, char **argv)
     data[i].locked_reads_ok = 0;
     data[i].locked_reads_failed = 0;
     data[i].max_retries = 0;
+#endif
 #endif /* ! TM_COMPILER */
     data[i].diff = 0;
     rand_init(data[i].seed);
@@ -1887,6 +1929,7 @@ int main(int argc, char **argv)
 
   duration = (end.tv_sec * 1000 + end.tv_usec / 1000) - (start.tv_sec * 1000 + start.tv_usec / 1000);
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   aborts = 0;
   aborts_1 = 0;
   aborts_2 = 0;
@@ -1900,6 +1943,7 @@ int main(int argc, char **argv)
   locked_reads_ok = 0;
   locked_reads_failed = 0;
   max_retries = 0;
+#endif  
 #endif /* ! TM_COMPILER */
   reads = 0;
   updates = 0;
@@ -1910,6 +1954,7 @@ int main(int argc, char **argv)
     printf("  #contains   : %lu\n", data[i].nb_contains);
     printf("  #found      : %lu\n", data[i].nb_found);
 #ifndef TM_COMPILER
+#ifndef NO_STM  
     printf("  #aborts     : %lu\n", data[i].nb_aborts);
     printf("    #lock-r   : %lu\n", data[i].nb_aborts_locked_read);
     printf("    #lock-w   : %lu\n", data[i].nb_aborts_locked_write);
@@ -1937,6 +1982,7 @@ int main(int argc, char **argv)
     locked_reads_failed += data[i].locked_reads_failed;
     if (max_retries < data[i].max_retries)
       max_retries = data[i].max_retries;
+#endif    
 #endif /* ! TM_COMPILER */
     reads += data[i].nb_contains;
     updates += (data[i].nb_add + data[i].nb_remove);
@@ -1949,6 +1995,7 @@ int main(int argc, char **argv)
   printf("#read txs     : %lu (%f / s)\n", reads, reads * 1000.0 / duration);
   printf("#update txs   : %lu (%f / s)\n", updates, updates * 1000.0 / duration);
 #ifndef TM_COMPILER
+#ifndef NO_STM  
   printf("#aborts       : %lu (%f / s)\n", aborts, aborts * 1000.0 / duration);
   printf("  #lock-r     : %lu (%f / s)\n", aborts_locked_read, aborts_locked_read * 1000.0 / duration);
   printf("  #lock-w     : %lu (%f / s)\n", aborts_locked_write, aborts_locked_write * 1000.0 / duration);
@@ -1974,6 +2021,7 @@ int main(int argc, char **argv)
     printf("  90th perc.  : %f\n", ab_stats.percentile_90);
     printf("  95th perc.  : %f\n", ab_stats.percentile_95);
   }
+#endif  
 #endif /* ! TM_COMPILER */
 
   /* Delete set */

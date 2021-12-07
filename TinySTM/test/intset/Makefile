@@ -17,22 +17,22 @@ endif
 all:	$(BINS)
 
 intset-hs.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_HASHSET -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_HASHSET -DNO_STM -c -o $@ $<
 
 intset-ll.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DNO_STM -c -o $@ $<
 	
 intset-ll-pm.o: intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DPERSISTENT -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DNO_STM -DPERSISTENT -c -o $@ $<
 	
 intset-ll-pm-DB.o: intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DPERSISTENT -DDEBUG_PM -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_LINKEDLIST -DNO_STM -DPERSISTENT -DDEBUG_PM -c -o $@ $<
 
 intset-rb.o:	intset.c rbtree.c rbtree.h
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_RBTREE -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_RBTREE -DNO_STM -c -o $@ $<
 
 intset-sl.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_SKIPLIST -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_SKIPLIST -DNO_STM -c -o $@ $<
 
 # FIXME in case of ABI $(TMLIB) must be replaced to abi/...
 $(BINS):	%:	%.o $(TMLIB)
