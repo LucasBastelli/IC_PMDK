@@ -1,24 +1,19 @@
 import subprocess
 import re
+import matplotlib
 import matplotlib.pyplot as plt
 import sys
+import numpy
 
-def rodar(arq,rep,Tamanho,update):
-	programa="./intset-ll"
+def rodar(arq,rep,Tamanho,update,programa):
 	argumento=["-i ","-r ","-u"]
 	aux=1
 	while(aux<=rep):			#Quantidade de repeticoes
-		rep0=rep
-		size0=Tamanho[0]
-		contador=1
-		qnt0=len(Tamanho)
-		while(qnt0>=0):		#Variados tamanhos
-				teste=subprocess.run([programa, argumento[0]+str(size0),argumento[1]+str(size0),argumento[2]+str(update)], stdout=subprocess.PIPE)
+		print("Repetição "+str(aux)+" de "+str(rep)) 
+		for size0 in Tamanho:		#Variados tamanhos
+				teste=subprocess.run([programa, argumento[0]+str(size0),argumento[1]+str(2*size0),argumento[2]+str(update)], stdout=subprocess.PIPE)
 				linhas = teste.stdout.splitlines()
 				salvarRAW(arq,size0,aux,linhas)
-				qnt0-=1
-				size0=Tamanho[contador]
-				contador+=1
 		aux+=1
 		
 	return
@@ -30,6 +25,22 @@ def procura(txt,arq):
 			line=enumera(line)
 			return int(line)
 			
+
+def graf_comparacao(arq,x,y,y1,error1,error2):
+	add=0.3
+	plt.yscale("log")
+	Sizex=['128', '256', '512', '1024', '2048']
+	plt.rcParams['figure.figsize'] = (11,7)
+	bar1=numpy.arange(len(x))
+	bar2=[i+add for i in bar1]
+	plt.bar(bar1, y,add, yerr=error1, color='r')
+	plt.bar(bar2, y1,add, yerr=error2, color='b')
+	plt.xticks(bar1+add/2,Sizex)
+	plt.ylabel('Velocidade')
+	plt.title('Comparação PM vs RAM')
+	plt.legend(labels=['RAM', 'PM'])
+	plt.savefig(arq+"/graficoComparacao.pdf")
+	plt.show()
 
 def graf(arq,x,y,intCon):
 	plt.rcParams['figure.figsize'] = (11,7)
@@ -61,12 +72,13 @@ def abrirRAW(txt,diretorio,rep,indice):
 	listaAux=[]
 	lista=[]
 	listaTam=[]
-	contador=1
+	contador=0
 	contador2=1
-	contadorTam=1
+	contadorTam=0
 	tamanho=indice[0]
-	while(contador<aumentar):
+	while(contador<(len(indice))):
 		contador2=1
+		tamanho=indice[contadorTam]
 		listaAux=[]
 		while(contador2<=rep):
 			arq=open(diretorio+"/teste"+str(tamanho)+"_"+str(contador2),"r")
@@ -76,7 +88,6 @@ def abrirRAW(txt,diretorio,rep,indice):
 			contador2+=1
 		listaTam.append(tamanho)
 		lista.append(listaAux)		
-		tamanho=indice[contadorTam]
 		contadorTam+=1
 		contador+=1
 	return listaTam,lista
@@ -164,9 +175,17 @@ def enumera(lista):					#Remove os textos,deixando apenas os numeros
 
 def main(arg):
 	rep=10					#Quantas vezes ira repetir
-	tamanho=[128,256,512,1024,2048,4096,8192,16384]
-	update=20				#Taxa de update
+	tamanho=[128,256,512,1024,2048]
+	update=75				#Taxa de update
+	PM=1
+	programa="./intset-ll"
 	arq="/home/lucas/Desktop/teste"
+	
+	if(PM==1):
+		programa=programa+"-pm"
+		arq=arq+"PM"
+		
+	arq=arq+"_update"+str(update)
 	txt='#txs          :'
 	arq=mkdir(arq)
 	x=[]
@@ -181,8 +200,8 @@ def main(arg):
 		return
 		
 	elif(arg[1]=='a'):
-		criaIndice(arq,rep,tamanho,aumentar)
-		rodar(arq,rep,tamanho,update)
+		criaIndice(arq,rep,tamanho)
+		rodar(arq,rep,tamanho,update,programa)
 		x,y=abrirRAW(txt,arq,rep,tamanho)
 		medias=mediaLista(y)
 		for lista in y:
@@ -192,18 +211,43 @@ def main(arg):
 	
 	elif(arg[1]=='r'):
 		criaIndice(arq,rep,tamanho)
-		rodar(arq,rep,tamanho,update)
+		rodar(arq,rep,tamanho,update,programa)
 		return		
 	
 	elif(arg[1]=='g'):
 		indice=abrirIndice(arq)
 		rep=indice[0]
 		indice.pop(0)
+		indice=indice[0]
 		x,y=abrirRAW(txt,arq,rep,indice)
 		medias=mediaLista(y)
 		for lista in y:
 			intervalo.append(IntConfianca(lista))
 		graf(arq,x,medias,intervalo)
+		return
+	
+	elif(arg[1]=='c'):
+		arq="/home/lucas/Desktop/teste_update75"
+		arq2="/home/lucas/Desktop/testePM_update75"
+		intervalo=[]
+		intervalo2=[]
+		indice=abrirIndice(arq)
+		indice2=abrirIndice(arq2)
+		rep=indice[0]
+		indice.pop(0)
+		indice=indice[0]
+		rep2=indice2[0]
+		indice2.pop(0)
+		indice2=indice2[0]
+		x,y=abrirRAW(txt,arq,rep,indice)
+		x2,y2=abrirRAW(txt,arq2,rep2,indice2)
+		medias=mediaLista(y)
+		medias2=mediaLista(y2)
+		for lista in y:
+			intervalo.append(IntConfianca(lista))
+		for lista in y2:
+			intervalo2.append(IntConfianca(lista))
+		graf_comparacao(arq,x,medias,medias2,intervalo,intervalo2)
 		return
 		
 	else:
@@ -211,6 +255,6 @@ def main(arg):
 		return
 	
 	
-
+#teste
 main(sys.argv)
 #criaIndice("/home/lucas/Desktop/teste",10,128,8)
