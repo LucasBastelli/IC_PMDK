@@ -158,12 +158,13 @@ static inline int rand_range(int n, unsigned short *seed)
 
 #ifdef PERSISTENT
 #include <libpmemobj.h>
-#define PMEMOBJ_SIZE (1024*1024*100)
+#define LAYOUT_NAME "PMfile"
 POBJ_LAYOUT_BEGIN(queue);
 POBJ_LAYOUT_ROOT(queue, struct root);
 POBJ_LAYOUT_TOID(queue, struct entry);
+POBJ_LAYOUT_TOID(queue, struct bucket);
 POBJ_LAYOUT_END(queue);
-	
+#define PMEMOBJ_SIZE (1024*1024*100)	
 static PMEMobjpool *pop;
 #endif
 
@@ -218,8 +219,6 @@ typedef intptr_t val_t;
 
 
 #ifdef PERSISTENT
-
-#define LAYOUT_NAME "LinkedList"
 
 void CreatePool(){
 	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
@@ -1191,6 +1190,28 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
 
 typedef intptr_t val_t;
 
+#ifdef PERSISTENT
+
+void CreatePool(){
+	pop = pmemobj_create("hashset", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	if(pop==NULL){
+		printf("Could not create pool/n");
+		exit(-1);
+	}
+	return;
+}
+
+struct bucket{
+	TOID(struct bucket) next;
+	val_t val;
+};
+
+struct root{
+	TOID(struct bucket) *buckets;
+};
+
+#else
+
 typedef struct bucket {
   val_t val;
   struct bucket *next;
@@ -1199,7 +1220,7 @@ typedef struct bucket {
 typedef struct intset {
   bucket_t **buckets;
 } intset_t;
-
+#endif
 TM_PURE
 static uint32_t hash(uint32_t a)
 {
@@ -1209,6 +1230,156 @@ static uint32_t hash(uint32_t a)
 }
 
 TM_SAFE
+
+#ifdef PERSISTENT
+TOID(struct bucket) new_entry(val_t val, TOID(struct bucket) next, int transactional){
+	static PMEMobjpool *pop;
+	TOID(struct bucket) b;
+	TX_BEGIN(pop){
+		b = TX_ALLOC(struct bucket,sizeof(struct bucket));
+		D_RW(b)->val=val;
+		D_RW(b)->next = next;
+	}TX_END
+	return b;
+
+}
+
+TOID(struct root) set_new()
+{
+  static PMEMobjpool *pop;
+  TOID(struct root) set = POBJ_ROOT(pop, struct root);
+  TX_BEGIN(pop){
+    set = TX_ALLOC(struct root,sizeof(struct root));
+  }TX_END
+
+  return set;
+}
+
+static void set_delete(TOID(struct root) set)
+{
+  static PMEMobjpool *pop;
+  unsigned int i;
+  TOID(struct bucket) b, next;
+
+  for (i = 0; i < NB_BUCKETS; i++) {
+    TX_BEGIN(pop){
+      b=D_RO(set)->buckets[i];
+    }TX_END
+    while(!(TOID_IS_NULL(b))){
+      TX_BEGIN(pop){
+        next=D_RO(b)->next;
+        TX_FREE(b);
+        b=next;
+      }TX_END
+    }
+  }
+  TX_BEGIN(pop){
+    TX_FREE(D_RO(set)->buckets);
+    TX_FREE(set);
+  }TX_END
+  
+}
+
+static int set_size(TOID(struct root) set)
+{
+  static PMEMobjpool *pop;
+  int size = 0;
+  unsigned int i;
+  TOID(struct bucket) b;
+
+  for (i = 0; i < NB_BUCKETS; i++) {
+    TX_BEGIN(pop){
+      D_RW(b)= D_RO(set)->buckets[i];
+    }TX_END
+    while (!(TOID_IS_NULL(b))) {
+      size++;
+      TX_BEGIN(pop){
+        b=D_RO(b)->next;
+      }TX_END
+    }
+  }
+
+  return size;
+}
+
+static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  int result, i;
+  TOID(struct bucket) b;
+  i = HASH(val);
+  b = D_RO(set)->buckets[i];
+  result = 0;
+  while (!(TOID_IS_NULL(b))) {
+    if (D_RO(b)->val == val) {
+      result = 1;
+      break;
+    }
+    b = D_RO(b)->next;
+  }
+
+  return result;
+}
+
+static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  static PMEMobjpool *pop;
+  int result,i;
+  TOID(struct bucket) b, first;
+  i = HASH(val);
+  first = b = D_RO(set)->buckets[i];
+  result = 1;
+  while (!(TOID_IS_NULL(b))) {
+    if (D_RO(b)->val == val) {
+      result = 0;
+      break;
+    }
+    b = D_RO(b)->next;
+  }
+  if (result) {
+    b=new_entry(val, first, 0);
+    TX_BEGIN(pop){
+      D_RW(set)->buckets[i] = b;
+    }TX_END
+  }
+  return result;
+}
+
+static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  static PMEMobjpool *pop;
+  int result, i;
+  TOID(struct bucket) b, prev;
+
+  i = HASH(val);
+  prev = b = D_RO(set)->buckets[i];
+  result = 0;
+  while (!(TOID_IS_NULL(b))) {
+    if (D_RO(b)->val == val) {
+      result = 1;
+      break;
+    }
+    prev = b;
+    b = D_RO(b)->next;
+  }
+  if (result) {
+    if (D_RO(prev)==D_RO(b)) {
+      /* First element of bucket */
+      TX_BEGIN(pop){
+        D_RW(set)->buckets[i]=D_RO(b)->next;
+      }TX_END
+    } else {
+      TX_BEGIN(pop){
+        D_RW(prev)->next=D_RO(b)->next;
+      }TX_END
+    }
+    TX_BEGIN(pop){
+      TX_FREE(b);
+    }TX_END
+  }
+  return result;
+}
+
+#else
 static bucket_t *new_entry(val_t val, bucket_t *next, int transactional)
 {
   bucket_t *b;
@@ -1422,6 +1593,8 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
 
   return result;
 }
+
+#endif
 
 #endif /* defined(USE_HASHSET) */
 
