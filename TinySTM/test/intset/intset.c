@@ -161,8 +161,11 @@ static inline int rand_range(int n, unsigned short *seed)
 #define LAYOUT_NAME "PMfile"
 POBJ_LAYOUT_BEGIN(queue);
 POBJ_LAYOUT_ROOT(queue, struct root);
+#ifdef USE_LINKEDLIST
 POBJ_LAYOUT_TOID(queue, struct entry);
+#else
 POBJ_LAYOUT_TOID(queue, struct bucket);
+#endif
 POBJ_LAYOUT_END(queue);
 #define PMEMOBJ_SIZE (1024*1024*100)	
 static PMEMobjpool *pop;
@@ -223,7 +226,7 @@ typedef intptr_t val_t;
 void CreatePool(){
 	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
 	if(pop==NULL){
-		printf("Could not create pool/n");
+		printf("Could not create pool\n");
 		exit(-1);
 	}
 	return;
@@ -1193,7 +1196,7 @@ typedef intptr_t val_t;
 #ifdef PERSISTENT
 
 void CreatePool(){
-	pop = pmemobj_create("hashset", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
 	if(pop==NULL){
 		printf("Could not create pool/n");
 		exit(-1);
@@ -1274,7 +1277,6 @@ static void set_delete(TOID(struct root) set)
     }
   }
   TX_BEGIN(pop){
-    TX_FREE(D_RO(set)->buckets);
     TX_FREE(set);
   }TX_END
   
@@ -1289,7 +1291,7 @@ static int set_size(TOID(struct root) set)
 
   for (i = 0; i < NB_BUCKETS; i++) {
     TX_BEGIN(pop){
-      D_RW(b)= D_RO(set)->buckets[i];
+      b = D_RO(set)->buckets[i];
     }TX_END
     while (!(TOID_IS_NULL(b))) {
       size++;
