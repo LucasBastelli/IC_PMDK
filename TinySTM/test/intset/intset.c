@@ -165,6 +165,7 @@ POBJ_LAYOUT_ROOT(queue, struct root);
 POBJ_LAYOUT_TOID(queue, struct entry);
 #else
 POBJ_LAYOUT_TOID(queue, struct bucket);
+POBJ_LAYOUT_TOID(queue, struct hashmap);
 #endif
 POBJ_LAYOUT_END(queue);
 #define PMEMOBJ_SIZE (1024*1024*100)	
@@ -1205,12 +1206,17 @@ void CreatePool(){
 }
 
 struct bucket{
-	TOID(struct bucket) next;
 	val_t val;
+  TOID(struct bucket) next;
+};
+
+struct hashmap{
+  size_t size;
+  TOID(struct bucket) bucketList[];
 };
 
 struct root{
-	TOID(struct bucket) *buckets;
+  TOID(struct hashmap) buckets;
 };
 
 #else
@@ -1251,8 +1257,12 @@ TOID(struct root) set_new()
 {
   static PMEMobjpool *pop;
   TOID(struct root) set = POBJ_ROOT(pop, struct root);
+  TOID(struct hashmap) list;
   TX_BEGIN(pop){
     set = TX_ALLOC(struct root,sizeof(struct root));
+    list = TX_ALLOC(struct hashmap,sizeof(struct hashmap)+(NB_BUCKETS*sizeof(struct bucket)));
+    D_RW(list)->size=0;
+    D_RW(set)->buckets=list;
   }TX_END
 
   return set;
@@ -1262,11 +1272,12 @@ static void set_delete(TOID(struct root) set)
 {
   static PMEMobjpool *pop;
   unsigned int i;
+  TOID(struct hashmap) list=D_RO(set)->buckets;
   TOID(struct bucket) b, next;
 
   for (i = 0; i < NB_BUCKETS; i++) {
     TX_BEGIN(pop){
-      b=D_RO(set)->buckets[i];
+      b=D_RO(list)->bucketList[i];
     }TX_END
     while(!(TOID_IS_NULL(b))){
       TX_BEGIN(pop){
@@ -1277,6 +1288,7 @@ static void set_delete(TOID(struct root) set)
     }
   }
   TX_BEGIN(pop){
+    TX_FREE(D_RW(set)->buckets);
     TX_FREE(set);
   }TX_END
   
@@ -1284,33 +1296,16 @@ static void set_delete(TOID(struct root) set)
 
 static int set_size(TOID(struct root) set)
 {
-  static PMEMobjpool *pop;
-  int size = 0;
-  unsigned int i;
-  TOID(struct bucket) b;
-
-  for (i = 0; i < NB_BUCKETS; i++) {
-    TX_BEGIN(pop){
-      b = D_RO(set)->buckets[i];
-    }TX_END
-    while (!(TOID_IS_NULL(b))) {
-      size++;
-      TX_BEGIN(pop){
-        b=D_RO(b)->next;
-      }TX_END
-    }
-  }
-
-  return size;
+  TOID(struct hashmap) b=D_RO(set)->buckets;
+  return D_RO(b)->size;
 }
 
 static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
 {
-  int result, i;
+  int result=0, i=HASH(val);
   TOID(struct bucket) b;
-  i = HASH(val);
-  b = D_RO(set)->buckets[i];
-  result = 0;
+  TOID(struct hashmap) list=D_RO(set)->buckets;
+  b = D_RO(list)->bucketList[i];
   while (!(TOID_IS_NULL(b))) {
     if (D_RO(b)->val == val) {
       result = 1;
@@ -1327,8 +1322,9 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
   static PMEMobjpool *pop;
   int result,i;
   TOID(struct bucket) b, first;
+  TOID(struct hashmap) list=D_RO(set)->buckets;
   i = HASH(val);
-  first = b = D_RO(set)->buckets[i];
+  first = b = D_RO(list)->bucketList[i];
   result = 1;
   while (!(TOID_IS_NULL(b))) {
     if (D_RO(b)->val == val) {
@@ -1340,7 +1336,8 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
   if (result) {
     b=new_entry(val, first, 0);
     TX_BEGIN(pop){
-      D_RW(set)->buckets[i] = b;
+      D_RW(list)->size=(D_RO(list)->size)+1;
+      D_RW(list)->bucketList[i] = b;
     }TX_END
   }
   return result;
@@ -1351,9 +1348,10 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
   static PMEMobjpool *pop;
   int result, i;
   TOID(struct bucket) b, prev;
+  TOID(struct hashmap) list=D_RO(set)->buckets;
 
   i = HASH(val);
-  prev = b = D_RO(set)->buckets[i];
+  prev = b = D_RO(list)->bucketList[i];
   result = 0;
   while (!(TOID_IS_NULL(b))) {
     if (D_RO(b)->val == val) {
@@ -1367,7 +1365,7 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
     if (D_RO(prev)==D_RO(b)) {
       /* First element of bucket */
       TX_BEGIN(pop){
-        D_RW(set)->buckets[i]=D_RO(b)->next;
+        D_RW(list)->bucketList[i]=D_RO(b)->next;
       }TX_END
     } else {
       TX_BEGIN(pop){
