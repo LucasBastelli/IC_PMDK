@@ -168,7 +168,7 @@ POBJ_LAYOUT_TOID(queue, struct bucket);
 POBJ_LAYOUT_TOID(queue, struct hashmap);
 #endif
 POBJ_LAYOUT_END(queue);
-#define PMEMOBJ_SIZE (1024*1024*100)	
+#define PMEMOBJ_SIZE (1024*1024*200)	
 static PMEMobjpool *pop;
 #endif
 
@@ -1205,6 +1205,7 @@ void CreatePool(){
 	return;
 }
 
+
 struct bucket{
 	val_t val;
   TOID(struct bucket) next;
@@ -1242,7 +1243,6 @@ TM_SAFE
 
 #ifdef PERSISTENT
 TOID(struct bucket) new_entry(val_t val, TOID(struct bucket) next, int transactional){
-	static PMEMobjpool *pop;
 	TOID(struct bucket) b;
 	TX_BEGIN(pop){
 		b = TX_ALLOC(struct bucket,sizeof(struct bucket));
@@ -1253,14 +1253,39 @@ TOID(struct bucket) new_entry(val_t val, TOID(struct bucket) next, int transacti
 
 }
 
+static void print_linked(const TOID(struct bucket) lista)
+{
+	const struct bucket *aux= D_RO(lista);
+	printf("Numero: %ld\n", aux->val);
+	if (!TOID_IS_NULL(D_RO(lista)->next))
+	{
+		print_linked(D_RO(lista)->next);	//Utiliza recursão para printar todos
+	}
+	return;
+}
+
+static void print_buckets(const TOID(struct root) set)
+{
+int i;
+  TOID(struct hashmap) list=D_RO(set)->buckets;
+  TOID(struct bucket) b;
+  for (i = 0; i < NB_BUCKETS; i++) {
+    b=D_RO(list)->bucketList[i];
+    if(!TOID_IS_NULL(b)){
+      print_linked(b);
+    }
+  }
+	return;
+}
+
+
 TOID(struct root) set_new()
 {
-  static PMEMobjpool *pop;
   TOID(struct root) set = POBJ_ROOT(pop, struct root);
   TOID(struct hashmap) list;
   TX_BEGIN(pop){
     set = TX_ALLOC(struct root,sizeof(struct root));
-    list = TX_ALLOC(struct hashmap,sizeof(struct hashmap)+(NB_BUCKETS*sizeof(struct bucket)));
+    list = TX_ZALLOC(struct hashmap,sizeof(struct hashmap)+(NB_BUCKETS*sizeof(struct bucket)));
     D_RW(list)->size=0;
     D_RW(set)->buckets=list;
   }TX_END
@@ -1270,28 +1295,23 @@ TOID(struct root) set_new()
 
 static void set_delete(TOID(struct root) set)
 {
-  static PMEMobjpool *pop;
-  unsigned int i;
+  int i;
   TOID(struct hashmap) list=D_RO(set)->buckets;
   TOID(struct bucket) b, next;
-
   for (i = 0; i < NB_BUCKETS; i++) {
+    b=D_RO(list)->bucketList[i];
     TX_BEGIN(pop){
-      b=D_RO(list)->bucketList[i];
+      while(!(TOID_IS_NULL(b))){
+          next=D_RO(b)->next;
+          TX_FREE(b);
+          b=next;
+      }
     }TX_END
-    while(!(TOID_IS_NULL(b))){
-      TX_BEGIN(pop){
-        next=D_RO(b)->next;
-        TX_FREE(b);
-        b=next;
-      }TX_END
-    }
   }
   TX_BEGIN(pop){
-    TX_FREE(D_RW(set)->buckets);
+    TX_FREE(list);
     TX_FREE(set);
   }TX_END
-  
 }
 
 static int set_size(TOID(struct root) set)
@@ -1319,7 +1339,6 @@ static int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
 
 static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 {
-  static PMEMobjpool *pop;
   int result,i;
   TOID(struct bucket) b, first;
   TOID(struct hashmap) list=D_RO(set)->buckets;
@@ -1345,7 +1364,6 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 
 static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 {
-  static PMEMobjpool *pop;
   int result, i;
   TOID(struct bucket) b, prev;
   TOID(struct hashmap) list=D_RO(set)->buckets;
@@ -1373,6 +1391,7 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
       }TX_END
     }
     TX_BEGIN(pop){
+      D_RW(list)->size=(D_RO(list)->size)-1;
       TX_FREE(b);
     }TX_END
   }
@@ -1721,7 +1740,7 @@ int main()
 		CreatePool();
 		//pop = pmemobj_open("list", LAYOUT_NAME);
  	}
- 	TOID(struct root) set = set_new();//Ele ja imprime a lista anterior
+ 	TOID(struct root) set = set_new();
  	int numeros[6]={0,9,37,5,2,72};
  	int cont=0;
  	printf("Agora será inserido números\n");
@@ -1735,26 +1754,34 @@ int main()
 	 	cont++;
  	}
  	printf("Agora será impresso todos os números:\n");
- 	print_todos(D_RO(set)->head);
- 	printf("tamanho da pool: %d\n",(D_RO(set)->size));
+ 	print_buckets(set);
  	printf("Agora vamos remover o número 5 e o 37\n");
  	set_remove(set,5,0);
  	set_remove(set,37,0);
  	printf("Agora será impresso todos os números:\n");
- 	print_todos(D_RO(set)->head);
- 	 printf("tamanho da pool: %d\n",(D_RO(set)->size));
+ 	print_buckets(set);
  	cont=0;
- 	printf("Inserindo os numeros repetidos 9 e 2 para testar:\n");
- 	set_add(set,9,0);
- 	set_add(set,2,0);
+ 	printf("Inserindo o 5\n");
+  if(set_add(set,5,0)){
+    printf("5 inserido\n");//Ele testa se ja existe e insere
+  }
+  else{
+    printf("5 ja esta na lista\n");
+  }
+ 	if(set_add(set,37,0)){
+    printf("37 inserido\n");//Ele testa se ja existe e insere
+  }
+  else{
+    printf("37 ja esta na lista\n");
+  }
  	printf("Agora será impresso todos os números:\n");
- 	print_todos(D_RO(set)->head);
- 	printf("tamanho da pool: %d\n",(D_RO(set)->size));
+ 	print_buckets(set);
+ 	//printf("tamanho da pool: %d\n",(D_RO(set)->size));
  	printf("Agora vamos apagar toda a lista e comecar de novo\n");
  	set_delete(set);// Apaga a lista inteira
  	set = set_new();//Precisa sempre usar o set_new, se nao ele buga, ele avisará que esta vazio
  	cont=0;
- 	printf("Inserindo de 1 a 10\n");
+ 	printf("Inserindo de 0 a 9\n");
  	while(cont<10){// Como apagou a lista, ele ira adicionar de novo
 	 	if(set_add(set, cont, 0)){
 	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
@@ -1765,7 +1792,10 @@ int main()
 	 	cont++;
  	
  	}
- 	set_delete(set);// Apaga a lista inteira	
+  printf("Agora será impresso todos os números:\n");
+ 	print_buckets(set);
+ 	set_delete(set);// Apaga a lista inteira
+
 }
 #else
 
