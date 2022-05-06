@@ -163,9 +163,14 @@ POBJ_LAYOUT_BEGIN(queue);
 POBJ_LAYOUT_ROOT(queue, struct root);
 #ifdef USE_LINKEDLIST
 POBJ_LAYOUT_TOID(queue, struct entry);
-#else
+#endif
+#ifdef USE_HASHSET
 POBJ_LAYOUT_TOID(queue, struct bucket);
 POBJ_LAYOUT_TOID(queue, struct hashmap);
+#endif
+#ifdef USE_SKIPLIST
+POBJ_LAYOUT_TOID(queue, struct node);
+POBJ_LAYOUT_TOID(queue, struct intset);
 #endif
 POBJ_LAYOUT_END(queue);
 #define PMEMOBJ_SIZE (1024*1024*200)	
@@ -297,7 +302,7 @@ TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTI
 		/* now we can safely allocate and initialize the new entry */
 		entry = TX_ALLOC(struct entry,sizeof(struct entry));
 		D_RW(entry)->val = valor;
-		D_RW(entry)->next=nextNode;	
+		D_RW(entry)->next=nextNode;
 		// snapshot before changing
 	} TX_END
 	return entry;
@@ -349,6 +354,7 @@ void set_delete(TOID(struct root) root){
 	while(!TOID_IS_NULL(D_RO(root)->head)){	//Apaga a lista inteira	
 		TX_BEGIN(pop){
 			TX_ADD(root);
+      TX_ADD(noh_atual);
 			D_RW(root)->head=D_RO(noh_atual)->next;
 			D_RW(root)->size = (D_RO(root)->size)-1;
 			TX_FREE(noh_atual);
@@ -394,6 +400,8 @@ static int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 	result = (D_RO(next)->val != val);
 	if (result) {
 		TX_BEGIN(pop){
+      TX_ADD(set);
+      TX_ADD(prev);
 			D_RW(set)->size = (D_RO(set)->size)+1;
 			aux = new_node(val, next, 0);
 			D_RW(prev)->next=aux;
@@ -418,6 +426,8 @@ static int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 	result = (D_RO(next)->val == val);
 	if (result) {
 		TX_BEGIN(pop){
+      TX_ADD(set);
+      TX_ADD(prev);
 			D_RW(set)->size = (D_RO(set)->size)-1;
 			D_RW(prev)->next = D_RO(next)->next;
 			TX_FREE(next);
@@ -882,6 +892,33 @@ typedef intptr_t level_t;
 # define VAL_MIN                        INT_MIN
 # define VAL_MAX                        INT_MAX
 
+#ifdef PERSISTENT
+
+void CreatePool(){
+	pop = pmemobj_create("list", LAYOUT_NAME, PMEMOBJ_SIZE, 0666);
+	if(pop==NULL){
+		printf("Could not create pool/n");
+		exit(-1);
+	}
+	return;
+}
+
+struct node{
+  TOID(struct node) forward[1];
+  val_t val;
+  level_t level;
+};
+
+struct root{
+  level_t level;
+  int prob;
+  int max_level;
+  TOID(struct node) tail;
+  TOID(struct node) head;
+};
+
+#else
+
 typedef struct node {
   val_t val;
   level_t level;
@@ -895,6 +932,209 @@ typedef struct intset {
   int prob;
   int max_level;
 } intset_t;
+
+#endif
+
+#ifdef PERSISTENT
+static int random_level(TOID(struct root) set, unsigned short *seed)
+{
+  int l = 0;
+  while (l < D_RO(set)->max_level && rand_range(100, seed) < D_RO(set)->prob)
+    l++;
+  return l;
+}
+
+TOID(struct node) new_node(val_t val, level_t level, int transactional)
+{
+  TOID(struct node) node;
+  TX_BEGIN(pop){
+    node = TX_ALLOC(struct node,sizeof(struct node));
+    D_RW(node)->val = val;
+    D_RW(node)->level = level;
+  }TX_END
+  return node;
+
+}
+
+TOID(struct root) set_new(level_t max_level, int prob)
+{
+  TOID(struct root) set=POBJ_ROOT(pop, struct root);
+  int i;
+
+  assert(max_level <= MAX_LEVEL);
+  assert(prob >= 0 && prob <= 100);
+  TX_BEGIN(pop){
+    D_RW(set)->max_level = max_level;
+    D_RW(set)->prob = prob;
+    D_RW(set)->level = 0;
+    TOID(struct node) tail = TX_ALLOC(struct node,sizeof(struct node));
+    TOID(struct node) head = TX_ALLOC(struct node,sizeof(struct node));
+    D_RW(tail)->val = VAL_MAX;
+    D_RW(tail)->level = max_level;
+    D_RW(head)->val = VAL_MIN;
+    D_RW(head)->level = max_level;
+    D_RW(set)->tail=tail;
+    D_RW(set)->head=head;
+    }TX_END
+  for (i = 0; i <= max_level; i++) {
+    TX_BEGIN(pop){
+      TOID(struct node) head = D_RO(set)->head;
+      D_RW(head)->forward[i] = D_RO(set)->tail;
+      TOID(struct node) tail= D_RO(set)->tail;
+      D_RW(tail)->forward[i] = TOID_NULL(struct node);
+    }TX_END
+  }
+  
+
+  return set;
+}
+
+static void set_delete(TOID(struct root) set)
+{
+  TOID(struct node) node, next;
+
+  node = D_RO(set)->head;
+  while (!TOID_IS_NULL(node)) {
+    TX_BEGIN(pop){
+      TX_ADD(set);
+      next=D_RO(node)->forward[0];
+      TX_FREE(node);
+      node=next;
+    }TX_END
+  }
+  TX_BEGIN(pop){
+    TX_FREE(set);
+  }TX_END
+}
+
+int set_size(TOID(struct root) set)
+{
+  int size = 0;
+  TOID(struct node) node;
+
+  /* We have at least 2 elements */
+  node = D_RO(set)->head;
+  node = D_RO(node)->forward[0];
+  while (!TOID_IS_NULL(D_RO(node)->forward[0])) {
+    size++;
+    node = D_RO(node)->forward[0];
+  }
+
+  return size;
+}
+
+int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  int result, i;
+  TOID(struct node) node, next;
+
+  node = D_RO(set)->head;
+  for (i = D_RO(set)->level; i >= 0; i--) {
+    next = D_RO(node)->forward[i];
+    while (D_RO(next)->val < val) {
+      node = next;
+      next = D_RO(node)->forward[i];
+    }
+  }
+  node = D_RO(node)->forward[0];
+  result = (D_RO(node)->val == val);
+
+  return result;
+}
+
+int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  int result, i;
+  TOID(struct node) update[MAX_LEVEL + 1];
+  TOID(struct node) node, next;
+  level_t l;
+
+  node = D_RO(set)->head;
+  for (i = D_RO(set)->level; i >= 0; i--) {
+    next = D_RO(node)->forward[i];
+    while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
+      node = next;
+      next = D_RO(node)->forward[i];
+    }
+    update[i] = node;
+  }
+  node = D_RO(node)->forward[0];
+  printf("Foi set add 2\n");
+  if ((!TOID_IS_NULL(node)) && (D_RO(node)->val == val)) {
+    result = 0;
+  } else {
+    l = random_level(set, main_seed);
+    printf("Foi set add 3\n");
+    if (l > D_RO(set)->level) {
+      for (i = D_RO(set)->level + 1; i <= l; i++)
+        update[i] = D_RO(set)->head;
+      TX_BEGIN(pop){          //Duvida
+        TX_ADD(set);
+        D_RW(set)->level = l;
+      }TX_END
+    }
+    node = new_node(val, l, 0);
+    for (i = 0; i <= l; i++) {
+      TX_BEGIN(pop){
+        D_RW(node)->forward[i] = D_RO(update[i])->forward[i];
+        D_RW(update[i])->forward[i] = node;
+      }TX_END
+    }
+    printf("Foi set add 4\n");
+    result = 1;
+  }
+  
+  return result;
+}
+
+int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
+{
+  int result, i;
+  TOID(struct node) update[MAX_LEVEL + 1];
+  TOID(struct node) node, next, test;
+
+  if (!td) {
+    node = D_RO(set)->head;
+    for (i = D_RO(set)->level; i >= 0; i--) {
+      next = D_RO(node)->forward[i];
+      while (D_RO(next)->val < val) {
+        node = next;
+        next = D_RO(node)->forward[i];
+      }
+      update[i] = node;
+    }
+    node = D_RO(node)->forward[0];
+    test= D_RO(update[i])->forward[i]; //criei o test pra tirar o erro
+    if (D_RO(node)->val != val) {
+      result = 0;
+    } else {
+      for (i = 0; i <= D_RO(set)->level; i++) {
+        //if (D_RO(update[i])->forward[i] == D_RO(node)) era assim
+        if (D_RO(test) == D_RO(node)){
+          TX_BEGIN(pop){
+            TX_ADD(set);
+            D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
+          }TX_END
+        }
+      }
+      test = D_RO(set)->head;
+      test = D_RO(test)->forward[D_RO(set)->level];
+      test = D_RO(test)->forward[0];
+      //while (D_RO(set)->level > 0 && D_RO(set)->head->forward[D_RO(set)->level]->forward[0] == NULL)
+      while (D_RO(set)->level > 0 && (TOID_IS_NULL(test))){
+        TX_BEGIN(pop){
+         D_RW(set)->level--;
+        }TX_END
+      }
+      TX_FREE(node);
+      result = 1;
+    }
+  }
+
+  return result;
+}
+
+#else
 
 TM_PURE
 static int random_level(intset_t *set, unsigned short *seed)
@@ -1179,6 +1419,8 @@ static int set_remove(intset_t *set, val_t val, thread_data_t *td)
 
   return result;
 }
+
+#endif
 
 #elif defined(USE_HASHSET)
 
@@ -1732,7 +1974,7 @@ static void *test(void *data)
   return NULL;
 }
 
-#ifdef DEBUG_PM
+#ifdef DEBUG_PM_HS
 int main()
 {
 	pop = pmemobj_open("list", LAYOUT_NAME);
@@ -1797,6 +2039,75 @@ int main()
  	set_delete(set);// Apaga a lista inteira
 
 }
+
+
+#elif DEBUG_PM_SL
+
+int main()
+{
+	pop = pmemobj_open("list", LAYOUT_NAME);
+	if (pop == NULL) {
+		CreatePool();
+		//pop = pmemobj_open("list", LAYOUT_NAME);
+ 	}
+ 	TOID(struct root) set = set_new(INIT_SET_PARAMETERS);
+ 	int numeros[6]={0,9,37,5,2,72};
+ 	int cont=0;
+ 	printf("Agora será inserido números\n");
+ 	while(cont<6){
+	 	if(set_add(set, numeros[cont], 0)){
+	 		printf("%d inserido\n",numeros[cont]);//Ele testa se ja existe e insere
+	 	}
+	 	else{
+	 		printf("%d ja esta na lista\n",numeros[cont]);
+	 	}
+	 	cont++;
+ 	}
+ 	printf("Agora será impresso todos os números:\n");
+ 	//print_buckets(set);
+ 	printf("Agora vamos remover o número 5 e o 37\n");
+ 	set_remove(set,5,0);
+ 	set_remove(set,37,0);
+ 	printf("Agora será impresso todos os números:\n");
+ 	//print_buckets(set);
+ 	cont=0;
+ 	printf("Inserindo o 5\n");
+  if(set_add(set,5,0)){
+    printf("5 inserido\n");//Ele testa se ja existe e insere
+  }
+  else{
+    printf("5 ja esta na lista\n");
+  }
+ 	if(set_add(set,37,0)){
+    printf("37 inserido\n");//Ele testa se ja existe e insere
+  }
+  else{
+    printf("37 ja esta na lista\n");
+  }
+ 	printf("Agora será impresso todos os números:\n");
+ 	//print_buckets(set);
+ 	//printf("tamanho da pool: %d\n",(D_RO(set)->size));
+ 	printf("Agora vamos apagar toda a lista e comecar de novo\n");
+ 	set_delete(set);// Apaga a lista inteira
+ 	set = set_new(INIT_SET_PARAMETERS);//Precisa sempre usar o set_new, se nao ele buga, ele avisará que esta vazio
+ 	cont=0;
+ 	printf("Inserindo de 0 a 9\n");
+ 	while(cont<10){// Como apagou a lista, ele ira adicionar de novo
+	 	if(set_add(set, cont, 0)){
+	 		printf("%d inserido\n",cont);//Ele testa se ja existe e insere
+	 	}
+	 	else{
+	 	printf("%d ja esta na lista\n",cont);
+	 	}
+	 	cont++;
+ 	
+ 	}
+  printf("Agora será impresso todos os números:\n");
+ 	//print_buckets(set);
+ 	set_delete(set);// Apaga a lista inteira
+
+}
+
 #else
 
 int main(int argc, char **argv)
