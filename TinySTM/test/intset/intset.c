@@ -886,7 +886,7 @@ void CreatePool(){
 }
 
 struct node{
-  TOID(struct node) forward[1];
+  TOID(struct node) forward[]; //Não precis do valor dentro, vai alocar igual o hashset
   val_t val;
   level_t level;
 };
