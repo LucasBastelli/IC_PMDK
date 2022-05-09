@@ -1095,8 +1095,8 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
     for (i = 0; i <= l; i++) {
       TX_BEGIN(pop){
         D_RW(node)->forward[i] = D_RO(update[i])->forward[i];
-        D_RW(update[i])->forward[i] = node;
       }TX_END
+      update[i]->forward[i] = node; //Retirei da transação pois nao é persistente
     }
     result = 1;
   }
@@ -1128,10 +1128,11 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
       //if (D_RO(update[i])->forward[i] == D_RO(node)) era assim
       test = D_RO(update[i])->forward[i];
       if (D_RO(test)->val == D_RO(node)->val){ //mudança não muito certa: ele comparava os nós, n achei na pmdk, comparei os valores(ja q n se repetem)
-        TX_BEGIN(pop){
+        /*TX_BEGIN(pop){
           TX_ADD(set);
           D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
-        }TX_END
+        }TX_END */
+        update[i]->forward[i] = D_RO(node)->forward[i];
       }
     }
     test = D_RO(set)->head;
@@ -1143,6 +1144,8 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
         TX_ADD(set);
         D_RW(set)->level--;
       }TX_END
+    	test = D_RO(test)->forward[D_RO(set)->level];
+    	test = D_RO(test)->forward[0]; //Percorre
     }
     TX_BEGIN(pop){
       TX_FREE(node);
