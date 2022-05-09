@@ -4,6 +4,8 @@ include $(ROOT)/Makefile.common
 
 LDFLAGS += -lpmemobj
 
+CFLAGDBG = -g3 -O0
+
 BINS = intset-hs intset-hs-pm intset-hs-pm-DB intset-ll intset-ll-pm intset-rb intset-sl intset-sl-pm intset-sl-pm-DB
 
 UNAME := $(shell uname)
@@ -41,7 +43,7 @@ intset-sl-pm.o:	intset.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_SKIPLIST -DNO_STM -DPERSISTENT -c -o $@ $<
 
 intset-sl-pm-DB.o:	intset.c
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(DEFINES) -DUSE_SKIPLIST -DNO_STM -DPERSISTENT -DDEBUG_PM_SL -c -o $@ $<
+	$(CC) $(CPPFLAGS) $(CFLAGDBG) $(DEFINES) -DUSE_SKIPLIST -DNO_STM -DPERSISTENT -DDEBUG_PM_SL -c -o $@ $<
 
 # FIXME in case of ABI $(TMLIB) must be replaced to abi/...
 $(BINS):	%:	%.o $(TMLIB)
