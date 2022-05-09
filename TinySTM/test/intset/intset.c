@@ -170,7 +170,6 @@ POBJ_LAYOUT_TOID(queue, struct hashmap);
 #endif
 #ifdef USE_SKIPLIST
 POBJ_LAYOUT_TOID(queue, struct node);
-POBJ_LAYOUT_TOID(queue, struct intset);
 #endif
 POBJ_LAYOUT_END(queue);
 #define PMEMOBJ_SIZE (1024*1024*200)	
@@ -277,23 +276,6 @@ static void print_todos(const TOID(struct entry) str)
 	return;
 }
 
-void remove_noh(TOID(struct entry) noh_anterior){
-//	static PMEMobjpool *pop;
-	TOID(struct entry) noh_atual=D_RO(noh_anterior)->next;
-	if(D_RO(noh_atual)==D_RO(noh_anterior)){
-		printf("Nó atual é a cabeça!\n");
-		return;
-	}
-	TX_BEGIN(pop){
-		TX_ADD(noh_anterior);
-		D_RW(noh_anterior)->next=D_RO(noh_atual)->next; //Nó anterior aponta para o próximo nó do atual, e remove o nó atual
-		TX_FREE(noh_atual);
-	
-	
-	}TX_END
-	return;
-
-}
 
 TOID(struct entry) new_node(int valor,TOID(struct entry) nextNode, int TRANSACTION){
 //	static PMEMobjpool *pop;
@@ -944,14 +926,41 @@ static int random_level(TOID(struct root) set, unsigned short *seed)
   return l;
 }
 
+void print_skiplist(TOID(struct root) set){
+  int i;
+  int valor;
+  TOID(struct node) node, next;
+  node = D_RO(set)->head;
+  i = D_RO(set)->level;
+  printf("i: %d\n",i);
+  for (i = D_RO(set)->level; i >= 0; i--) {
+    next = D_RO(node)->forward[i];
+    while (!TOID_IS_NULL(next)) {
+      valor= D_RO(node)->val;
+      printf("Numero: %d\n", valor);
+      node = next;
+      next = D_RO(node)->forward[i];
+    }
+  }
+
+
+}
+
 TOID(struct node) new_node(val_t val, level_t level, int transactional)
 {
   TOID(struct node) node;
   TX_BEGIN(pop){
-    node = TX_ALLOC(struct node,sizeof(struct node));
+    //TODO: Mudar para ponteiro persistente
+    node = TX_ALLOC(struct node, sizeof(struct node) + level * sizeof(TOID(struct node)));
     D_RW(node)->val = val;
     D_RW(node)->level = level;
   }TX_END
+  if (TOID_IS_NULL(node)) {
+    perror("node eh nulo\n");
+    exit(1);
+  }
+
+
   return node;
 
 }
@@ -964,15 +973,20 @@ TOID(struct root) set_new(level_t max_level, int prob)
   assert(max_level <= MAX_LEVEL);
   assert(prob >= 0 && prob <= 100);
   TX_BEGIN(pop){
+    set = TX_ALLOC(struct root,sizeof(struct root));
     D_RW(set)->max_level = max_level;
     D_RW(set)->prob = prob;
     D_RW(set)->level = 0;
+    /*
     TOID(struct node) tail = TX_ALLOC(struct node,sizeof(struct node));
     TOID(struct node) head = TX_ALLOC(struct node,sizeof(struct node));
     D_RW(tail)->val = VAL_MAX;
     D_RW(tail)->level = max_level;
     D_RW(head)->val = VAL_MIN;
     D_RW(head)->level = max_level;
+    */
+    TOID(struct node) tail = new_node(VAL_MAX, max_level, 0);
+    TOID(struct node) head = new_node(VAL_MIN, max_level, 0);
     D_RW(set)->tail=tail;
     D_RW(set)->head=head;
     }TX_END
@@ -1052,6 +1066,8 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
   node = D_RO(set)->head;
   for (i = D_RO(set)->level; i >= 0; i--) {
     next = D_RO(node)->forward[i];
+    //while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
+    //void *teste = D_RO(next);
     while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
       node = next;
       next = D_RO(node)->forward[i];
@@ -1059,28 +1075,29 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
     update[i] = node;
   }
   node = D_RO(node)->forward[0];
-  printf("Foi set add 2\n");
   if ((!TOID_IS_NULL(node)) && (D_RO(node)->val == val)) {
     result = 0;
   } else {
     l = random_level(set, main_seed);
-    printf("Foi set add 3\n");
     if (l > D_RO(set)->level) {
       for (i = D_RO(set)->level + 1; i <= l; i++)
         update[i] = D_RO(set)->head;
-      TX_BEGIN(pop){          //Duvida
+      TX_BEGIN(pop){      
         TX_ADD(set);
         D_RW(set)->level = l;
       }TX_END
     }
-    node = new_node(val, l, 0);
+    TX_BEGIN(pop)
+    {
+      node = new_node(val, l, 0);
+    }TX_END
+
     for (i = 0; i <= l; i++) {
       TX_BEGIN(pop){
         D_RW(node)->forward[i] = D_RO(update[i])->forward[i];
         D_RW(update[i])->forward[i] = node;
       }TX_END
     }
-    printf("Foi set add 4\n");
     result = 1;
   }
   
@@ -1091,45 +1108,48 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
 {
   int result, i;
   TOID(struct node) update[MAX_LEVEL + 1];
-  TOID(struct node) node, next, test;
+  TOID(struct node) node, next;
+  TOID(struct node) test;
 
-  if (!td) {
-    node = D_RO(set)->head;
-    for (i = D_RO(set)->level; i >= 0; i--) {
+  node = D_RO(set)->head;
+  for (i = D_RO(set)->level; i >= 0; i--) {
+    next = D_RO(node)->forward[i];
+    while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
+      node = next;
       next = D_RO(node)->forward[i];
-      while (D_RO(next)->val < val) {
-        node = next;
-        next = D_RO(node)->forward[i];
-      }
-      update[i] = node;
     }
-    node = D_RO(node)->forward[0];
-    test= D_RO(update[i])->forward[i]; //criei o test pra tirar o erro
-    if (D_RO(node)->val != val) {
-      result = 0;
-    } else {
-      for (i = 0; i <= D_RO(set)->level; i++) {
-        //if (D_RO(update[i])->forward[i] == D_RO(node)) era assim
-        if (D_RO(test) == D_RO(node)){
-          TX_BEGIN(pop){
-            TX_ADD(set);
-            D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
-          }TX_END
-        }
-      }
-      test = D_RO(set)->head;
-      test = D_RO(test)->forward[D_RO(set)->level];
-      test = D_RO(test)->forward[0];
-      //while (D_RO(set)->level > 0 && D_RO(set)->head->forward[D_RO(set)->level]->forward[0] == NULL)
-      while (D_RO(set)->level > 0 && (TOID_IS_NULL(test))){
+    update[i] = node;
+  }
+  node = D_RO(node)->forward[0];
+  if (D_RO(node)->val != val) {
+    result = 0;
+  } else {
+    for (i = 0; i <= D_RO(set)->level; i++) {
+      //if (D_RO(update[i])->forward[i] == D_RO(node)) era assim
+      test = D_RO(update[i])->forward[i];
+      if (D_RO(test)->val == D_RO(node)->val){ //mudança não muito certa: ele comparava os nós, n achei na pmdk, comparei os valores(ja q n se repetem)
         TX_BEGIN(pop){
-         D_RW(set)->level--;
+          TX_ADD(set);
+          D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
         }TX_END
       }
-      TX_FREE(node);
-      result = 1;
     }
+    test = D_RO(set)->head;
+    test = D_RO(test)->forward[D_RO(set)->level];
+    test = D_RO(test)->forward[0];
+    //while (D_RO(set)->level > 0 && D_RO(set)->head->forward[D_RO(set)->level]->forward[0] == NULL)
+    while (D_RO(set)->level > 0 && (TOID_IS_NULL(test))){
+      TX_BEGIN(pop){
+        TX_ADD(set);
+        D_RW(set)->level--;
+      }TX_END
+    }
+    TX_BEGIN(pop){
+      TX_FREE(node);
+    }TX_END
+    result = 1;
   }
+
 
   return result;
 }
@@ -2051,10 +2071,12 @@ int main()
 		//pop = pmemobj_open("list", LAYOUT_NAME);
  	}
  	TOID(struct root) set = set_new(INIT_SET_PARAMETERS);
- 	int numeros[6]={0,9,37,5,2,72};
+  printf("VALMIN: %d\n",VAL_MIN);
+  printf("VALMAX: %d\n",VAL_MAX);
+ 	int numeros[7]={0,9,37,5,2,72,37};
  	int cont=0;
  	printf("Agora será inserido números\n");
- 	while(cont<6){
+ 	while(cont<7){
 	 	if(set_add(set, numeros[cont], 0)){
 	 		printf("%d inserido\n",numeros[cont]);//Ele testa se ja existe e insere
 	 	}
@@ -2064,12 +2086,12 @@ int main()
 	 	cont++;
  	}
  	printf("Agora será impresso todos os números:\n");
- 	//print_buckets(set);
+ 	print_skiplist(set);
  	printf("Agora vamos remover o número 5 e o 37\n");
  	set_remove(set,5,0);
  	set_remove(set,37,0);
  	printf("Agora será impresso todos os números:\n");
- 	//print_buckets(set);
+ 	print_skiplist(set);
  	cont=0;
  	printf("Inserindo o 5\n");
   if(set_add(set,5,0)){
@@ -2085,7 +2107,7 @@ int main()
     printf("37 ja esta na lista\n");
   }
  	printf("Agora será impresso todos os números:\n");
- 	//print_buckets(set);
+ 	print_skiplist(set);
  	//printf("tamanho da pool: %d\n",(D_RO(set)->size));
  	printf("Agora vamos apagar toda a lista e comecar de novo\n");
  	set_delete(set);// Apaga a lista inteira
@@ -2103,7 +2125,7 @@ int main()
  	
  	}
   printf("Agora será impresso todos os números:\n");
- 	//print_buckets(set);
+ 	print_skiplist(set);
  	set_delete(set);// Apaga a lista inteira
 
 }
