@@ -886,9 +886,9 @@ void CreatePool(){
 }
 
 struct node{
-  TOID(struct node) forward[]; //Não precis do valor dentro, vai alocar igual o hashset
   val_t val;
   level_t level;
+  TOID(struct node) forward[]; //Não precis do valor dentro, vai alocar igual o hashset
 };
 
 struct root{
@@ -931,9 +931,8 @@ void print_skiplist(TOID(struct root) set){
   int valor;
   TOID(struct node) node, next;
   node = D_RO(set)->head;
-  i = D_RO(set)->level;
-  printf("i: %d\n",i);
-  for (i = D_RO(set)->level; i >= 0; i--) {
+  i = 0;
+  //for (i = D_RO(set)->level; i >= 0; i--) {
     next = D_RO(node)->forward[i];
     while (!TOID_IS_NULL(next)) {
       valor= D_RO(node)->val;
@@ -941,7 +940,9 @@ void print_skiplist(TOID(struct root) set){
       node = next;
       next = D_RO(node)->forward[i];
     }
-  }
+    valor= D_RO(node)->val;
+    printf("Numero: %d\n", valor);
+  //}
 
 
 }
@@ -1096,7 +1097,7 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
       TX_BEGIN(pop){
         D_RW(node)->forward[i] = D_RO(update[i])->forward[i];
       }TX_END
-      update[i]->forward[i] = node; //Retirei da transação pois nao é persistente
+      D_RW(update[i])->forward[i] = node; //Retirei da transação pois nao é persistente
     }
     result = 1;
   }
@@ -1132,7 +1133,7 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
           TX_ADD(set);
           D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
         }TX_END */
-        update[i]->forward[i] = D_RO(node)->forward[i];
+        D_RW(update[i])->forward[i] = D_RO(node)->forward[i];
       }
     }
     test = D_RO(set)->head;
