@@ -172,7 +172,7 @@ POBJ_LAYOUT_TOID(queue, struct hashmap);
 POBJ_LAYOUT_TOID(queue, struct node);
 #endif
 POBJ_LAYOUT_END(queue);
-#define PMEMOBJ_SIZE (1024*1024*200)	
+#define PMEMOBJ_SIZE (1024*1024*1024)	
 static PMEMobjpool *pop;
 #endif
 
@@ -952,7 +952,7 @@ TOID(struct node) new_node(val_t val, level_t level, int transactional)
   TOID(struct node) node;
   TX_BEGIN(pop){
     //TODO: Mudar para ponteiro persistente
-    node = TX_ALLOC(struct node, sizeof(struct node) + level * sizeof(TOID(struct node)));
+    node = TX_ZALLOC(struct node, sizeof(struct node) + (level+1) * sizeof(TOID(struct node)));
     D_RW(node)->val = val;
     D_RW(node)->level = level;
   }TX_END
@@ -1046,7 +1046,7 @@ int set_contains(TOID(struct root) set, val_t val, thread_data_t *td)
   node = D_RO(set)->head;
   for (i = D_RO(set)->level; i >= 0; i--) {
     next = D_RO(node)->forward[i];
-    while (D_RO(next)->val < val) {
+    while ((D_RO(next)->val < val)) {
       node = next;
       next = D_RO(node)->forward[i];
     }
@@ -1069,14 +1069,14 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
     next = D_RO(node)->forward[i];
     //while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
     //void *teste = D_RO(next);
-    while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
+    while ((D_RO(next)->val < val)) {
       node = next;
       next = D_RO(node)->forward[i];
     }
     update[i] = node;
   }
   node = D_RO(node)->forward[0];
-  if ((!TOID_IS_NULL(node)) && (D_RO(node)->val == val)) {
+  if ((D_RO(node)->val == val)) {
     result = 0;
   } else {
     l = random_level(set, main_seed);
@@ -1115,14 +1115,14 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
   node = D_RO(set)->head;
   for (i = D_RO(set)->level; i >= 0; i--) {
     next = D_RO(node)->forward[i];
-    while ((!TOID_IS_NULL(next)) && (D_RO(next)->val < val)) {
+    while ((D_RO(next)->val < val)) {
       node = next;
       next = D_RO(node)->forward[i];
     }
     update[i] = node;
   }
   node = D_RO(node)->forward[0];
-  if (D_RO(node)->val != val) {
+  if ((D_RO(node)->val != val)) {
     result = 0;
   } else {
     for (i = 0; i <= D_RO(set)->level; i++) {
@@ -1145,6 +1145,7 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
         TX_ADD(set);
         D_RW(set)->level--;
       }TX_END
+      test = D_RO(set)->head;
     	test = D_RO(test)->forward[D_RO(set)->level];
     	test = D_RO(test)->forward[0]; //Percorre
     }
