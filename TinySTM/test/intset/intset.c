@@ -172,7 +172,7 @@ POBJ_LAYOUT_TOID(queue, struct hashmap);
 POBJ_LAYOUT_TOID(queue, struct node);
 #endif
 POBJ_LAYOUT_END(queue);
-#define PMEMOBJ_SIZE (1024*1024*1024)	
+#define PMEMOBJ_SIZE (1024*1024*200)	
 static PMEMobjpool *pop;
 #endif
 
