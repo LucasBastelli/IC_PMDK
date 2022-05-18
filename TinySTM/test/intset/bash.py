@@ -1,9 +1,6 @@
 import subprocess
 import re
-import matplotlib
-import matplotlib.pyplot as plt
 import sys
-import numpy
 
 def rodar(arq,rep,Tamanho,update,programa):
 	argumento=["-i ","-r ","-u"]
@@ -175,11 +172,11 @@ def enumera(lista):					#Remove os textos,deixando apenas os numeros
 
 def main(arg):
 	rep=10					#Quantas vezes ira repetir
-	tamanho=[128,256,512,1024,2048]
-	update=75				#Taxa de update
-	PM=1
+	tamanho=[128,256,512,1024,2048,4096,8192,16384,32768,65536]
+	update=50                               #Taxa de update
+	PM=0
 	programa="./intset-ll"
-	arq="/home/lucas/Desktop/teste"
+	arq="/home-ext/LucasIC/TestesHD/test"        #Pra ssd é TestesHSssd
 	
 	if(PM==1):
 		programa=programa+"-pm"
