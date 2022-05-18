@@ -888,7 +888,7 @@ void CreatePool(){
 struct node{
   val_t val;
   level_t level;
-  TOID(struct node) forward[]; //Não precis do valor dentro, vai alocar igual o hashset
+  TOID(struct node) forward[]; //Não precisa do valor dentro, vai alocar igual o hashset
 };
 
 struct root{
@@ -974,7 +974,7 @@ TOID(struct root) set_new(level_t max_level, int prob)
   assert(max_level <= MAX_LEVEL);
   assert(prob >= 0 && prob <= 100);
   TX_BEGIN(pop){
-    set = TX_ALLOC(struct root,sizeof(struct root));
+    //set = TX_ALLOC(struct root,sizeof(struct root));
     D_RW(set)->max_level = max_level;
     D_RW(set)->prob = prob;
     D_RW(set)->level = 0;
@@ -990,7 +990,7 @@ TOID(struct root) set_new(level_t max_level, int prob)
     TOID(struct node) head = new_node(VAL_MIN, max_level, 0);
     D_RW(set)->tail=tail;
     D_RW(set)->head=head;
-    }TX_END
+  }TX_END
   for (i = 0; i <= max_level; i++) {
     TX_BEGIN(pop){
       TOID(struct node) head = D_RO(set)->head;
@@ -2073,11 +2073,23 @@ int main()
 	pop = pmemobj_open("list", LAYOUT_NAME);
 	if (pop == NULL) {
 		CreatePool();
+    printf("criou pool \n");
 		//pop = pmemobj_open("list", LAYOUT_NAME);
  	}
- 	TOID(struct root) set = set_new(INIT_SET_PARAMETERS);
+  TOID(struct root) set=POBJ_ROOT(pop, struct root);
+  TOID(struct node) teste= D_RO(set)->head;
+  printf("%p \n",D_RO(teste));
+  if(!(TOID_IS_NULL(D_RO(set)->head))){
+    printf("Nao eh nulo\n");
+    print_skiplist(set);
+ 	  set_delete(set);// Apaga a lista inteira
+  }
+ 	set = set_new(INIT_SET_PARAMETERS);
   printf("VALMIN: %d\n",VAL_MIN);
   printf("VALMAX: %d\n",VAL_MAX);
+  printf("Tamanho struct TOID: %ld\n", sizeof(TOID(struct node)));
+  printf("Tamanho struct sozinha: %ld\nTamanho val_t:%ld\n", sizeof(struct node),sizeof(val_t));
+  
  	int numeros[7]={0,9,37,5,2,72,37};
  	int cont=0;
  	printf("Agora será inserido números\n");
@@ -2131,7 +2143,6 @@ int main()
  	}
   printf("Agora será impresso todos os números:\n");
  	print_skiplist(set);
- 	set_delete(set);// Apaga a lista inteira
 
 }
 
