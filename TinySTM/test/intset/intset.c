@@ -953,6 +953,7 @@ TOID(struct node) new_node(val_t val, level_t level, int transactional)
   TX_BEGIN(pop){
     //TODO: Mudar para ponteiro persistente
     node = TX_ZALLOC(struct node, sizeof(struct node) + (level+1) * sizeof(TOID(struct node)));
+    TX_ADD(node);
     D_RW(node)->val = val;
     D_RW(node)->level = level;
   }TX_END
@@ -974,6 +975,7 @@ TOID(struct root) set_new(level_t max_level, int prob)
   assert(max_level <= MAX_LEVEL);
   assert(prob >= 0 && prob <= 100);
   TX_BEGIN(pop){
+    TX_ADD(set);
     //set = TX_ALLOC(struct root,sizeof(struct root));
     D_RW(set)->max_level = max_level;
     D_RW(set)->prob = prob;
@@ -1011,13 +1013,14 @@ static void set_delete(TOID(struct root) set)
   node = D_RO(set)->head;
   while (!TOID_IS_NULL(node)) {
     TX_BEGIN(pop){
-      TX_ADD(set);
+      TX_ADD(node);
       next=D_RO(node)->forward[0];
       TX_FREE(node);
       node=next;
     }TX_END
   }
   TX_BEGIN(pop){
+    TX_ADD(set);
     TX_FREE(set);
   }TX_END
 }
@@ -1095,6 +1098,7 @@ int set_add(TOID(struct root) set, val_t val, thread_data_t *td)
 
     for (i = 0; i <= l; i++) {
       TX_BEGIN(pop){
+        TX_ADD(node);
         D_RW(node)->forward[i] = D_RO(update[i])->forward[i];
       }TX_END
       D_RW(update[i])->forward[i] = node; //Retirei da transação pois nao é persistente
@@ -1150,6 +1154,7 @@ int set_remove(TOID(struct root) set, val_t val, thread_data_t *td)
     	test = D_RO(test)->forward[0]; //Percorre
     }
     TX_BEGIN(pop){
+      TX_ADD(set);
       TX_FREE(node);
     }TX_END
     result = 1;
